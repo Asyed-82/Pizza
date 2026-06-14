@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Kitchen Dashboard - Pizza Orders</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 16px;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .header h1 {
+            font-size: 1.5em;
+        }
+
+        .printer-status {
+            background: #e74c3c;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .printer-status.connected {
+            background: #27ae60;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #ff6b35;
+        }
+
+        .stat-label {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .orders-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .order-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border-left: 5px solid #ff6b35;
+            transition: all 0.3s;
+        }
+
+        .order-card.preparing {
+            border-left-color: #f39c12;
+            background: #fffef5;
+        }
+
+        .order-card.ready {
+            border-left-color: #27ae60;
+            background: #f0fff4;
+        }
+
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .order-id {
+            font-weight: bold;
+            font-size: 1.2em;
+            color: #2c3e50;
+        }
+
+        .order-time {
+            font-size: 0.8em;
+            color: #999;
+        }
+
+        .order-details {
+            margin-bottom: 16px;
+        }
+
+        .detail-row {
+            display: flex;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            width: 100px;
+            color: #555;
+        }
+
+        .detail-value {
+            flex: 1;
+            color: #333;
+        }
+
+        .order-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-prepare {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-ready {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-complete {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-print {
+            background: #34495e;
+            color: white;
+        }
+
+        .no-orders {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        @media (max-width: 768px) {
+            .detail-row {
+                flex-direction: column;
+            }
+            .detail-label {
+                width: auto;
+                margin-bottom: 4px;
+            }
+            .order-actions {
+                flex-wrap: wrap;
+            }
+            .btn {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🍕 Kitchen Dashboard</h1>
+        <div id="printerStatus" class="printer-status">🔌 Printer: Not Connected</div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-number" id="pendingCount">0</div>
+            <div class="stat-label">Pending Orders</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="preparingCount">0</div>
+            <div class="stat-label">Preparing</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="todayCount">0</div>
+            <div class="stat-label">Today's Orders</div>
+        </div>
+    </div>
+
+    <div id="ordersList" class="orders-container"></div>
+
+    <script>
+        let printer = null;
+        let orders = [];
+        
+        // Initialize Bluetooth printer
+        async function initPrinter() {
+            const statusDiv = document.getElementById('printerStatus');
+            
+            if ('bluetooth' in navigator) {
+                try {
+                    // Check for previously paired printer
+                    const devices = await navigator.bluetooth.getDevices();
+                    const printerDevice = devices.find(device => 
+                        device.name && (device.name.includes('TM-m30') || device.name.includes('EPSON'))
+                    );
+                    
+                    if (printerDevice) {
+                        printer = printerDevice;
+                        statusDiv.innerHTML = '✅ Printer: ' + printerDevice.name;
+                        statusDiv.classList.add('connected');
+                    } else {
+                        statusDiv.innerHTML = '🔌 <button onclick="connectPrinter()" style="background: white; color: #2c3e50; border: none; padding: 4px 12px; border-radius: 20px; margin-left: 8px;">Connect Printer</button>';
+                    }
+                } catch (error) {
+                    console.error('Printer init error:', error);
+                    statusDiv.innerHTML = '⚠️ Bluetooth error. <button onclick="connectPrinter()">Retry</button>';
+                }
+            } else {
+                statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome on Android.';
+            }
+        }
+        
+        // Connect to Bluetooth printer
+        window.connectPrinter = async function() {
+            const statusDiv = document.getElementById('printerStatus');
+            statusDiv.innerHTML = '🔄 Connecting...';
+            
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { namePrefix: 'TM-m30' },
+                        { namePrefix: 'EPSON' }
+                    ],
+                    optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+                });
+                
+                printer = device;
+                statusDiv.innerHTML = '✅ Printer: ' + device.name;
+                statusDiv.classList.add('connected');
+                
+                // Save for auto-reconnect
+                localStorage.setItem('printerName', device.name);
+            } catch (error) {
+                console.error('Connection failed:', error);
+                statusDiv.innerHTML = '❌ Failed to connect. <button onclick="connectPrinter()">Retry</button>';
+            }
+        };
+        
+        // Print ticket to thermal printer
+        async function printTicket(order) {
+            if (!printer) {
+                console.log('No printer connected, attempting to connect...');
+                await connectPrinter();
+                if (!printer) {
+                    throw new Error('Printer not connected');
+                }
+            }
+            
+            try {
+                const server = await printer.gatt.connect();
+                const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+                const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+                
+                // Format receipt
+                const receipt = formatKitchenReceipt(order);
+                const encoder = new TextEncoder();
+                const data = encoder.encode(receipt);
+                
+                await characteristic.writeValue(data);
+                await server.disconnect();
+                
+                console.log('Ticket printed for order:', order.orderId);
+                return true;
+            } catch (error) {
+                console.error('Print error:', error);
+                throw error;
+            }
+        }
+        
+        // Format kitchen receipt
+        function formatKitchenReceipt(order) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            
+            let receipt = '';
+            receipt += '\x1B\x40'; // Initialize
+            receipt += '\x1B\x61\x01'; // Center align
+            receipt += '═══════════════════════════\n';
+            receipt += '     🍕 KITCHEN ORDER 🍕     \n';
+            receipt += '═══════════════════════════\n';
+            receipt += '\x1B\x61\x00'; // Left align
+            receipt += `\nORDER #: ${order.orderId}\n`;
+            receipt += `TIME: ${timeStr}\n`;
+            receipt += `───────────────────────────\n`;
+            receipt += `ITEM: Cheese Pizza\n`;
+            receipt += `QUANTITY: ${order.quantity}\n`;
+            receipt += `───────────────────────────\n`;
+            receipt += `CUSTOMER: ${order.customerName}\n`;
+            receipt += `PHONE: ${order.phone}\n`;
+            if (order.notes) {
+                receipt += `NOTES: ${order.notes}\n`;
+            }
+            receipt += `───────────────────────────\n`;
+            receipt += `ADDRESS:\n${order.address}\n`;
+            receipt += `───────────────────────────\n`;
+            receipt += '\x1B\x61\x01';
+            receipt += `🔥 PRIORITY: NORMAL\n`;
+            receipt += `═══════════════════════════\n`;
+            receipt += `\x1B\x64\x02'; // Feed 2 lines
+            receipt += '\x1B\x64\x02';
+            
+            return receipt;
+        }
+        
+        // Load orders from localStorage
+        function loadOrders() {
+            const stored = localStorage.getItem('kitchen_orders');
+            if (stored) {
+                orders = JSON.parse(stored);
+                renderOrders();
+                updateStats();
+            }
+        }
+        
+        // Save orders to localStorage
+        function saveOrders() {
+            localStorage.setItem('kitchen_orders', JSON.stringify(orders));
+            // Notify customer page
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: 'kitchen_orders',
+                newValue: JSON.stringify(orders)
+            }));
+        }
+        
+        // Update order status
+        function updateOrderStatus(orderId, newStatus) {
+            const order = orders.find(o => o.orderId === orderId);
+            if (order) {
+                order.status = newStatus;
+                if (newStatus === 'preparing') {
+                    order.preparedAt = new Date().toISOString();
+                } else if (newStatus === 'ready') {
+                    order.readyAt = new Date().toISOString();
+                }
+                saveOrders();
+                renderOrders();
+                updateStats();
+            }
+        }
+        
+        // Delete order
+        function deleteOrder(orderId) {
+            orders = orders.filter(o => o.orderId !== orderId);
+            saveOrders();
+            renderOrders();
+            updateStats();
+        }
+        
+        // Update statistics
+        function updateStats() {
+            const pending = orders.filter(o => o.status === 'pending').length;
+            const preparing = orders.filter(o => o.status === 'preparing').length;
+            const today = orders.filter(o => {
+                const today = new Date().toDateString();
+                const orderDate = new Date(o.timestamp).toDateString();
+                return orderDate === today;
+            }).length;
+            
+            document.getElementById('pendingCount').textContent = pending;
+            document.getElementById('preparingCount').textContent = preparing;
+            document.getElementById('todayCount').textContent = today;
+        }
+        
+        // Render orders list
+        function renderOrders() {
+            const container = document.getElementById('ordersList');
+            
+            if (orders.length === 0) {
+                container.innerHTML = '<div class="no-orders">🎉 No orders yet. Waiting for customers...</div>';
+                return;
+            }
+            
+            container.innerHTML = orders.map(order => `
+                <div class="order-card ${order.status}">
+                    <div class="order-header">
+                        <div class="order-id">${order.orderId}</div>
+                        <div class="order-time">${new Date(order.timestamp).toLocaleString()}</div>
+                    </div>
+                    <div class="order-details">
+                        <div class="detail-row">
+                            <div class="detail-label">Customer:</div>
+                            <div class="detail-value">${order.customerName}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Phone:</div>
+                            <div class="detail-value">${order.phone}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Quantity:</div>
+                            <div class="detail-value">${order.quantity} x Cheese Pizza</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Address:</div>
+                            <div class="detail-value">${order.address}</div>
+                        </div>
+                        ${order.notes ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Notes:</div>
+                            <div class="detail-value">📝 ${order.notes}</div>
+                        </div>
+                        ` : ''}
+                        <div class="detail-row">
+                            <div class="detail-label">Total:</div>
+                            <div class="detail-value">$${order.total}</div>
+                        </div>
+                    </div>
+                    <div class="order-actions">
+                        ${order.status === 'pending' ? `
+                            <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Print Ticket</button>
+                            <button class="btn btn-prepare" onclick="updateOrderStatus('${order.orderId}', 'preparing')">👨‍🍳 Start Preparing</button>
+                        ` : ''}
+                        ${order.status === 'preparing' ? `
+                            <button class="btn btn-ready" onclick="updateOrderStatus('${order.orderId}', 'ready')">✅ Mark Ready</button>
+                        ` : ''}
+                        ${order.status === 'ready' ? `
+                            <button class="btn btn-complete" onclick="deleteOrder('${order.orderId}')">✔️ Complete Order</button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Print single order
+        window.printSingleOrder = async function(orderId) {
+            const order = orders.find(o => o.orderId === orderId);
+            if (order) {
+                try {
+                    await printTicket(order);
+                    alert('✅ Ticket printed successfully!');
+                } catch (error) {
+                    alert('❌ Print failed: ' + error.message);
+                }
+            }
+        };
+        
+        // Auto-print new orders
+        let lastOrderCount = 0;
+        function checkForNewOrders() {
+            const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+            if (currentOrders.length > lastOrderCount) {
+                // New order detected
+                const newOrder = currentOrders[0]; // Most recent order
+                if (newOrder && newOrder.status === 'pending') {
+                    console.log('New order detected, auto-printing...');
+                    printTicket(newOrder).catch(err => {
+                        console.error('Auto-print failed:', err);
+                    });
+                }
+            }
+            lastOrderCount = currentOrders.length;
+        }
+        
+        // Listen for storage events (cross-tab communication)
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'kitchen_orders') {
+                loadOrders();
+                checkForNewOrders();
+            }
+        });
+        
+        // Make functions global for buttons
+        window.updateOrderStatus = updateOrderStatus;
+        window.deleteOrder = deleteOrder;
+        
+        // Initialize
+        initPrinter();
+        loadOrders();
+        
+        // Check for new orders every 2 seconds
+        setInterval(checkForNewOrders, 2000);
+    </script>
+</body>
+</html>
