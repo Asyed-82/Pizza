@@ -40,21 +40,11 @@
             border-radius: 20px;
             font-size: 0.85em;
             font-weight: 600;
+            cursor: pointer;
         }
 
         .printer-status.connected {
             background: #27ae60;
-        }
-
-        .printer-status button {
-            background: white;
-            color: #2c3e50;
-            border: none;
-            padding: 4px 12px;
-            border-radius: 20px;
-            margin-left: 8px;
-            cursor: pointer;
-            font-weight: 600;
         }
 
         .stats {
@@ -84,28 +74,14 @@
             margin-top: 4px;
         }
 
-        .refresh-btn {
-            background: #3498db;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
+        .refresh-info {
+            background: #e8f5e9;
+            padding: 10px;
+            border-radius: 12px;
             margin-bottom: 20px;
-            width: 100%;
-        }
-
-        .auto-refresh-status {
-            background: #27ae60;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.75em;
             text-align: center;
-            margin-bottom: 15px;
-            display: inline-block;
-            width: auto;
+            font-size: 0.85em;
+            color: #2c3e50;
         }
 
         .orders-container {
@@ -240,23 +216,6 @@
             animation: fadeInOut 2s ease;
         }
 
-        .info-bar {
-            background: #e8f5e9;
-            padding: 12px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .last-update {
-            font-size: 0.8em;
-            color: #2c3e50;
-        }
-
         @keyframes fadeInOut {
             0% { opacity: 0; bottom: 0; }
             10% { opacity: 1; bottom: 20px; }
@@ -284,12 +243,11 @@
 <body>
     <div class="header">
         <h1>🍕 Kitchen Dashboard</h1>
-        <div id="printerStatus" class="printer-status">🔌 Printer: Not Connected</div>
+        <div id="printerStatus" class="printer-status" onclick="connectPrinter()">🔌 Click to Connect Printer</div>
     </div>
 
-    <div class="info-bar">
-        <div class="auto-refresh-status">🔄 Auto-Refresh: Every 2 seconds</div>
-        <div class="last-update" id="lastUpdate">Last update: --:--:--</div>
+    <div class="refresh-info">
+        🔄 Auto-refreshing every 2 seconds | Auto-printing enabled
     </div>
 
     <div class="stats">
@@ -307,56 +265,49 @@
         </div>
     </div>
 
-    <button class="refresh-btn" onclick="manualRefresh()">🔄 Manual Refresh</button>
-
     <div id="ordersList" class="orders-container"></div>
-    
     <div id="toast" class="toast"></div>
 
     <script>
-        let printer = null;
-        let gattServer = null;
+        let printerDevice = null;
+        let printerServer = null;
         let orders = [];
-        let refreshInterval = null;
-        let lastOrderIds = [];
+        let knownOrderIds = [];
         
-        function showToast(message, isError = false) {
+        // Show message
+        function showMessage(text, isError = false) {
             const toast = document.getElementById('toast');
-            toast.textContent = message;
+            toast.textContent = text;
             toast.style.background = isError ? '#e74c3c' : '#27ae60';
             toast.classList.add('show');
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 3000);
+            console.log(text);
         }
         
-        function updateLastUpdateTime() {
+        // Simple receipt text
+        function makeReceipt(order) {
+            const shortId = order.orderId.slice(-8);
             const now = new Date();
             const timeStr = now.toLocaleTimeString();
-            document.getElementById('lastUpdate').textContent = `Last update: ${timeStr}`;
-        }
-        
-        // Simple text receipt that works
-        function buildReceipt(order) {
-            const shortId = order.orderId.slice(-8);
-            const timeStr = new Date().toLocaleTimeString();
-            const dateStr = new Date().toLocaleDateString();
+            const dateStr = now.toLocaleDateString();
             
             let text = "";
             text += "\n\n";
             text += "=== PIZZA ORDER ===\n";
             text += "==================\n";
             text += `Order: ${shortId}\n`;
-            text += `Date: ${dateStr} ${timeStr}\n`;
+            text += `Time: ${dateStr} ${timeStr}\n";
             text += `Item: Cheese Pizza\n`;
             text += `Qty: ${order.quantity}\n`;
             text += `Total: $${order.total}\n`;
             text += "------------------\n";
             text += `${order.customerName}\n`;
             text += `${order.phone}\n`;
-            text += `${order.address}\n`;
+            text += `${order.address.substring(0, 35)}\n`;
             if (order.notes && order.notes.trim()) {
-                text += `Note: ${order.notes}\n`;
+                text += `Note: ${order.notes.substring(0, 30)}\n`;
             }
             text += "==================\n";
             text += "THANK YOU!\n";
@@ -367,127 +318,103 @@
         
         // Send to printer
         async function sendToPrinter(data) {
-            if (!printer) {
-                throw new Error('Printer not connected');
+            if (!printerDevice) {
+                throw new Error('No printer connected');
             }
             
             try {
-                if (!gattServer || !gattServer.connected) {
-                    gattServer = await printer.gatt.connect();
+                if (!printerServer || !printerServer.connected) {
+                    printerServer = await printerDevice.gatt.connect();
                 }
                 
-                const service = await gattServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+                const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
                 const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
                 
-                const MAX_CHUNK = 490;
-                
-                for (let i = 0; i < data.length; i += MAX_CHUNK) {
-                    const chunk = data.slice(i, i + MAX_CHUNK);
+                // Send in chunks if needed
+                const MAX_SIZE = 490;
+                for (let i = 0; i < data.length; i += MAX_SIZE) {
+                    const chunk = data.slice(i, i + MAX_SIZE);
                     await characteristic.writeValue(chunk);
-                    await new Promise(resolve => setTimeout(resolve, 50));
+                    await new Promise(r => setTimeout(r, 30));
                 }
                 
                 return true;
-            } catch (error) {
-                console.error('Send error:', error);
-                gattServer = null;
-                throw error;
+            } catch (err) {
+                printerServer = null;
+                throw err;
             }
         }
         
-        // Print ticket
-        async function printTicket(order) {
-            if (!printer) {
-                const shouldConnect = confirm('Printer not connected. Connect now?');
-                if (shouldConnect) {
-                    await connectPrinter();
-                    if (!printer) {
-                        throw new Error('Printer not connected');
-                    }
-                } else {
-                    throw new Error('Printer not connected');
-                }
+        // Print order
+        async function printOrder(order) {
+            if (!printerDevice) {
+                showMessage('❌ Printer not connected. Click the red button to connect.', true);
+                return false;
             }
             
             try {
-                showToast('🖨️ Printing ticket...');
-                const data = buildReceipt(order);
-                await sendToPrinter(data);
-                showToast('✅ Ticket printed!');
-                console.log('Printed order:', order.orderId);
+                showMessage('🖨️ Printing...');
+                const receipt = makeReceipt(order);
+                await sendToPrinter(receipt);
+                showMessage('✅ Printed!');
                 return true;
-            } catch (error) {
-                console.error('Print error:', error);
-                showToast(`❌ Print failed: ${error.message}`, true);
-                throw error;
+            } catch (err) {
+                console.error(err);
+                showMessage('❌ Print failed: ' + err.message, true);
+                return false;
             }
         }
         
-        // Connect to Bluetooth printer
+        // Connect to printer
         async function connectPrinter() {
             const statusDiv = document.getElementById('printerStatus');
-            statusDiv.innerHTML = '🔄 Searching for printer...';
-            statusDiv.style.background = '#f39c12';
             
             if (!('bluetooth' in navigator)) {
-                statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome on Android!';
+                statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome!';
                 statusDiv.style.background = '#e74c3c';
-                showToast('Web Bluetooth not supported. Use Chrome browser.', true);
+                showMessage('Web Bluetooth not supported. Please use Chrome browser.', true);
                 return;
             }
+            
+            statusDiv.innerHTML = '🔄 Searching...';
+            statusDiv.style.background = '#f39c12';
             
             try {
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [
-                        { namePrefix: 'TM-m30' },
-                        { namePrefix: 'EPSON' },
-                        { namePrefix: 'TM' }
+                        { namePrefix: 'TM' },
+                        { namePrefix: 'EPSON' }
                     ],
                     optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
                 });
                 
-                printer = device;
-                gattServer = await printer.gatt.connect();
+                printerDevice = device;
+                printerServer = await printerDevice.gatt.connect();
                 
                 // Test print
-                const testData = new TextEncoder().encode("\n=== Printer Ready ===\n\n");
-                const service = await gattServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-                const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-                await characteristic.writeValue(testData);
+                const testData = new TextEncoder().encode("\n=== Kitchen Printer Ready ===\n\n");
+                const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+                const testChar = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+                await testChar.writeValue(testData);
                 
-                statusDiv.innerHTML = `✅ Connected: ${device.name} <button onclick="disconnectPrinter()">Disconnect</button>`;
+                statusDiv.innerHTML = '✅ ' + device.name;
                 statusDiv.style.background = '#27ae60';
                 statusDiv.classList.add('connected');
                 
-                localStorage.setItem('printerName', device.name);
-                showToast(`✅ Connected to ${device.name}!`);
+                localStorage.setItem('savedPrinter', device.name);
+                showMessage('✅ Connected to ' + device.name);
                 
-            } catch (error) {
-                console.error('Connection error:', error);
-                statusDiv.innerHTML = `❌ Failed: ${error.message} <button onclick="connectPrinter()">Try Again</button>`;
+            } catch (err) {
+                console.error(err);
+                statusDiv.innerHTML = '❌ Failed. Click to retry';
                 statusDiv.style.background = '#e74c3c';
-                showToast(`Connection failed: ${error.message}`, true);
-                gattServer = null;
-                printer = null;
+                showMessage('Connection failed: ' + err.message, true);
+                printerDevice = null;
+                printerServer = null;
             }
         }
         
-        async function disconnectPrinter() {
-            if (gattServer) {
-                try {
-                    await gattServer.disconnect();
-                } catch(e) {}
-                gattServer = null;
-            }
-            printer = null;
-            const statusDiv = document.getElementById('printerStatus');
-            statusDiv.innerHTML = `🔌 Printer: Disconnected <button onclick="connectPrinter()">Connect</button>`;
-            statusDiv.style.background = '#e74c3c';
-            statusDiv.classList.remove('connected');
-            showToast('Printer disconnected');
-        }
-        
-        // Load orders from localStorage
+        // Load orders
         function loadOrders() {
             const stored = localStorage.getItem('kitchen_orders');
             if (stored) {
@@ -501,37 +428,10 @@
             }
             renderOrders();
             updateStats();
-            updateLastUpdateTime();
         }
         
         function saveOrders() {
             localStorage.setItem('kitchen_orders', JSON.stringify(orders));
-        }
-        
-        function manualRefresh() {
-            loadOrders();
-            showToast('Orders refreshed manually!');
-        }
-        
-        function updateOrderStatus(orderId, newStatus) {
-            const order = orders.find(o => o.orderId === orderId);
-            if (order) {
-                order.status = newStatus;
-                saveOrders();
-                renderOrders();
-                updateStats();
-                showToast(`Order ${orderId.slice(-8)} marked as ${newStatus}`);
-            }
-        }
-        
-        function deleteOrder(orderId) {
-            if (confirm('Complete this order?')) {
-                orders = orders.filter(o => o.orderId !== orderId);
-                saveOrders();
-                renderOrders();
-                updateStats();
-                showToast('Order completed');
-            }
         }
         
         function updateStats() {
@@ -548,6 +448,32 @@
             document.getElementById('todayCount').textContent = today;
         }
         
+        function updateOrderStatus(orderId, newStatus) {
+            const order = orders.find(o => o.orderId === orderId);
+            if (order) {
+                order.status = newStatus;
+                saveOrders();
+                loadOrders();
+                showMessage(`Order ${orderId.slice(-8)}: ${newStatus}`);
+            }
+        }
+        
+        function deleteOrder(orderId) {
+            if (confirm('Complete this order?')) {
+                orders = orders.filter(o => o.orderId !== orderId);
+                saveOrders();
+                loadOrders();
+                showMessage('Order completed');
+            }
+        }
+        
+        function printSingleOrder(orderId) {
+            const order = orders.find(o => o.orderId === orderId);
+            if (order) {
+                printOrder(order);
+            }
+        }
+        
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
@@ -559,7 +485,7 @@
             const container = document.getElementById('ordersList');
             
             if (orders.length === 0) {
-                container.innerHTML = '<div class="no-orders">🎉 No orders yet. Place a test order from the customer page!</div>';
+                container.innerHTML = '<div class="no-orders">🎉 No orders yet. Place an order from the customer page!</div>';
                 return;
             }
             
@@ -595,138 +521,101 @@
                     </div>
                     <div class="order-actions">
                         ${order.status === 'pending' ? `
-                            <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Print Ticket</button>
-                            <button class="btn btn-prepare" onclick="updateOrderStatus('${order.orderId}', 'preparing')">👨‍🍳 Start Preparing</button>
+                            <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Print</button>
+                            <button class="btn btn-prepare" onclick="updateOrderStatus('${order.orderId}', 'preparing')">👨‍🍳 Start</button>
                         ` : ''}
                         ${order.status === 'preparing' ? `
                             <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Reprint</button>
-                            <button class="btn btn-ready" onclick="updateOrderStatus('${order.orderId}', 'ready')">✅ Mark Ready</button>
+                            <button class="btn btn-ready" onclick="updateOrderStatus('${order.orderId}', 'ready')">✅ Ready</button>
                         ` : ''}
                         ${order.status === 'ready' ? `
-                            <button class="btn btn-complete" onclick="deleteOrder('${order.orderId}')">✔️ Complete Order</button>
+                            <button class="btn btn-complete" onclick="deleteOrder('${order.orderId}')">✔️ Complete</button>
                         ` : ''}
                     </div>
                 </div>
             `).join('');
         }
         
-        async function printSingleOrder(orderId) {
-            const order = orders.find(o => o.orderId === orderId);
-            if (order) {
-                try {
-                    await printTicket(order);
-                } catch (error) {
-                    console.error('Print failed:', error);
-                }
-            }
-        }
-        
-        // AUTO-REFRESH AND AUTO-PRINT FUNCTION
-        async function autoRefreshAndPrint() {
-            console.log('Auto-refresh running...');
-            
-            // Get current orders from localStorage
+        // Auto refresh and print - runs every 2 seconds
+        async function autoRefresh() {
+            // Get current orders
             const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
             const currentOrderIds = currentOrders.map(o => o.orderId);
             
-            // Check for new orders (orders we haven't seen before)
+            // Find new orders
             const newOrders = currentOrders.filter(order => {
-                return !lastOrderIds.includes(order.orderId) && order.status === 'pending';
+                return !knownOrderIds.includes(order.orderId) && order.status === 'pending';
             });
             
-            // If there are new orders, print them!
+            // Print new orders
             if (newOrders.length > 0) {
-                console.log(`Found ${newOrders.length} new order(s)! Auto-printing...`);
-                
-                for (const newOrder of newOrders) {
-                    console.log('Auto-printing order:', newOrder.orderId);
-                    try {
-                        await printTicket(newOrder);
-                        showToast(`🖨️ Auto-printed: ${newOrder.orderId.slice(-8)}`);
-                    } catch (err) {
-                        console.error('Auto-print failed:', err);
-                        showToast(`⚠️ Auto-print failed for ${newOrder.orderId.slice(-8)}`, true);
-                    }
+                for (const order of newOrders) {
+                    showMessage(`🆕 New order! Printing...`);
+                    await printOrder(order);
                 }
-            }
-            
-            // Update the orders list (refresh display)
-            if (JSON.stringify(currentOrderIds) !== JSON.stringify(lastOrderIds)) {
-                console.log('Order list changed, refreshing display...');
+                // Reload display
                 loadOrders();
             }
             
-            // Update last order IDs for next comparison
-            lastOrderIds = currentOrderIds;
-        }
-        
-        // Start the auto-refresh timer (every 2 seconds)
-        function startAutoRefresh() {
-            if (refreshInterval) {
-                clearInterval(refreshInterval);
-            }
-            
-            // Initial load
-            loadOrders();
-            
-            // Update lastOrderIds with current orders
-            const initialOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-            lastOrderIds = initialOrders.map(o => o.orderId);
-            
-            // Start interval (2000ms = 2 seconds)
-            refreshInterval = setInterval(autoRefreshAndPrint, 2000);
-            console.log('Auto-refresh started - checking every 2 seconds');
-            showToast('Auto-refresh active - checking for new orders every 2 seconds');
+            // Update known orders
+            knownOrderIds = currentOrderIds;
         }
         
         // Make functions global
         window.connectPrinter = connectPrinter;
-        window.disconnectPrinter = disconnectPrinter;
         window.updateOrderStatus = updateOrderStatus;
         window.deleteOrder = deleteOrder;
         window.printSingleOrder = printSingleOrder;
-        window.manualRefresh = manualRefresh;
         
-        // Initialize
-        startAutoRefresh();
-        
-        // Also listen for storage events (instant notification)
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'kitchen_orders') {
-                console.log('Storage event detected - immediate check');
-                autoRefreshAndPrint();
-            }
-        });
-        
-        // Check Bluetooth support
-        if (!('bluetooth' in navigator)) {
-            document.getElementById('printerStatus').innerHTML = '❌ Bluetooth NOT supported. Use Chrome browser!';
-            document.getElementById('printerStatus').style.background = '#e74c3c';
-        }
-        
-        // Auto-reconnect to printer
+        // Auto-reconnect to saved printer
         async function autoReconnect() {
-            const savedPrinterName = localStorage.getItem('printerName');
-            if (savedPrinterName && !printer) {
+            const savedName = localStorage.getItem('savedPrinter');
+            if (savedName && !printerDevice) {
                 try {
                     const devices = await navigator.bluetooth.getDevices();
-                    const savedDevice = devices.find(d => d.name === savedPrinterName);
-                    if (savedDevice) {
-                        printer = savedDevice;
-                        gattServer = await printer.gatt.connect();
+                    const saved = devices.find(d => d.name === savedName);
+                    if (saved) {
+                        printerDevice = saved;
+                        printerServer = await printerDevice.gatt.connect();
                         const statusDiv = document.getElementById('printerStatus');
-                        statusDiv.innerHTML = `✅ Connected: ${printer.name} <button onclick="disconnectPrinter()">Disconnect</button>`;
+                        statusDiv.innerHTML = '✅ ' + saved.name;
                         statusDiv.style.background = '#27ae60';
                         statusDiv.classList.add('connected');
-                        showToast(`Auto-reconnected to ${printer.name}`);
+                        showMessage('Auto-reconnected to printer');
                     }
-                } catch (error) {
-                    console.log('Auto-reconnect failed:', error);
+                } catch(e) {
+                    console.log('Auto-reconnect failed');
                 }
             }
         }
         
-        autoReconnect();
+        // Start everything
+        loadOrders();
+        
+        // Set initial known orders
+        const initialOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+        knownOrderIds = initialOrders.map(o => o.orderId);
+        
+        // Start auto-refresh every 2 seconds
+        setInterval(autoRefresh, 2000);
+        console.log('Auto-refresh started - checking every 2 seconds');
+        
+        // Also listen for storage events
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'kitchen_orders') {
+                console.log('Storage event - checking orders');
+                autoRefresh();
+            }
+        });
+        
+        // Auto-reconnect
+        setTimeout(autoReconnect, 1000);
+        
+        // Bluetooth check
+        if (!('bluetooth' in navigator)) {
+            document.getElementById('printerStatus').innerHTML = '❌ Bluetooth not supported';
+            document.getElementById('printerStatus').style.background = '#e74c3c';
+        }
     </script>
 </body>
 </html>
