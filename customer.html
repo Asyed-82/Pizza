@@ -219,19 +219,12 @@
             return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
         }
         
-        async function sendOrderToKitchen(orderData) {
+        function sendOrderToKitchen(orderData) {
             let orders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
             orderData.status = 'pending';
             orderData.receivedAt = new Date().toISOString();
             orders.unshift(orderData);
             localStorage.setItem('kitchen_orders', JSON.stringify(orders));
-            
-            // Force trigger storage event for kitchen page
-            window.dispatchEvent(new StorageEvent('storage', {
-                key: 'kitchen_orders',
-                newValue: JSON.stringify(orders)
-            }));
-            
             return true;
         }
         
@@ -266,12 +259,12 @@
             submitButton.textContent = 'Processing...';
             
             try {
-                await sendOrderToKitchen(orderData);
+                sendOrderToKitchen(orderData);
                 
                 messageDiv.innerHTML = `✅ Order placed! Order #${orderData.orderId}<br>Kitchen will prepare your pizza.`;
                 messageDiv.className = 'message success';
                 
-                statusDiv.innerHTML = '🕐 Order sent to kitchen. Waiting for confirmation...';
+                statusDiv.innerHTML = '🕐 Order sent to kitchen. Printing ticket...';
                 statusDiv.className = 'order-status show';
                 
                 document.getElementById('customerName').value = '';
@@ -281,25 +274,12 @@
                 document.getElementById('quantity').value = '1';
                 document.getElementById('totalPrice').textContent = '$12.99';
                 
-                const checkStatus = setInterval(() => {
-                    const orders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-                    const updatedOrder = orders.find(o => o.orderId === orderData.orderId);
-                    if (updatedOrder && updatedOrder.status === 'preparing') {
-                        statusDiv.innerHTML = '👨‍🍳 Kitchen is preparing your order! Ready in 15-20 min.';
-                        clearInterval(checkStatus);
-                    } else if (updatedOrder && updatedOrder.status === 'ready') {
-                        statusDiv.innerHTML = '✅ Your order is ready for pickup/delivery!';
-                        clearInterval(checkStatus);
-                    }
-                }, 3000);
-                
                 setTimeout(() => {
                     messageDiv.className = 'message';
                 }, 5000);
                 
             } catch (error) {
-                console.error('Order error:', error);
-                messageDiv.innerHTML = `❌ Error: ${error.message}. Please try again.`;
+                messageDiv.innerHTML = `❌ Error: ${error.message}`;
                 messageDiv.className = 'message error';
                 setTimeout(() => {
                     messageDiv.className = 'message';
