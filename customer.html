@@ -210,27 +210,23 @@
     <script>
         const PIZZA_PRICE = 12.99;
         
-        // Update total price when quantity changes
         document.getElementById('quantity').addEventListener('change', function() {
             const total = (PIZZA_PRICE * parseInt(this.value)).toFixed(2);
             document.getElementById('totalPrice').textContent = `$${total}`;
         });
         
-        // Generate unique order ID
         function generateOrderId() {
             return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
         }
         
-        // Send order to kitchen
         async function sendOrderToKitchen(orderData) {
-            // Get existing orders
             let orders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
             orderData.status = 'pending';
             orderData.receivedAt = new Date().toISOString();
-            orders.unshift(orderData); // Add to beginning
+            orders.unshift(orderData);
             localStorage.setItem('kitchen_orders', JSON.stringify(orders));
             
-            // Trigger storage event for kitchen page
+            // Force trigger storage event for kitchen page
             window.dispatchEvent(new StorageEvent('storage', {
                 key: 'kitchen_orders',
                 newValue: JSON.stringify(orders)
@@ -239,7 +235,6 @@
             return true;
         }
         
-        // Handle form submission
         document.getElementById('orderForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -247,7 +242,6 @@
             const statusDiv = document.getElementById('orderStatus');
             const submitButton = e.target.querySelector('button[type="submit"]');
             
-            // Get form data
             const orderData = {
                 orderId: generateOrderId(),
                 timestamp: new Date().toISOString(),
@@ -259,7 +253,6 @@
                 total: (PIZZA_PRICE * parseInt(document.getElementById('quantity').value)).toFixed(2)
             };
             
-            // Validate
             if (!orderData.customerName || !orderData.phone || !orderData.address) {
                 messageDiv.innerHTML = '⚠️ Please fill in all required fields.';
                 messageDiv.className = 'message error';
@@ -269,23 +262,18 @@
                 return;
             }
             
-            // Disable button
             submitButton.disabled = true;
             submitButton.textContent = 'Processing...';
             
             try {
-                // Send to kitchen
                 await sendOrderToKitchen(orderData);
                 
-                // Show success
                 messageDiv.innerHTML = `✅ Order placed! Order #${orderData.orderId}<br>Kitchen will prepare your pizza.`;
                 messageDiv.className = 'message success';
                 
-                // Show status
                 statusDiv.innerHTML = '🕐 Order sent to kitchen. Waiting for confirmation...';
                 statusDiv.className = 'order-status show';
                 
-                // Reset form
                 document.getElementById('customerName').value = '';
                 document.getElementById('phone').value = '';
                 document.getElementById('address').value = '';
@@ -293,7 +281,6 @@
                 document.getElementById('quantity').value = '1';
                 document.getElementById('totalPrice').textContent = '$12.99';
                 
-                // Listen for order status update
                 const checkStatus = setInterval(() => {
                     const orders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
                     const updatedOrder = orders.find(o => o.orderId === orderData.orderId);
@@ -306,7 +293,6 @@
                     }
                 }, 3000);
                 
-                // Clear message after 5 seconds
                 setTimeout(() => {
                     messageDiv.className = 'message';
                 }, 5000);
