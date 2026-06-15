@@ -46,6 +46,17 @@
             background: #27ae60;
         }
 
+        .printer-status button {
+            background: white;
+            color: #2c3e50;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 20px;
+            margin-left: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
@@ -71,6 +82,18 @@
             font-size: 0.8em;
             color: #666;
             margin-top: 4px;
+        }
+
+        .refresh-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 20px;
+            width: 100%;
         }
 
         .orders-container {
@@ -143,6 +166,7 @@
             display: flex;
             gap: 12px;
             margin-top: 16px;
+            flex-wrap: wrap;
         }
 
         .btn {
@@ -223,72 +247,66 @@
         </div>
     </div>
 
+    <button class="refresh-btn" onclick="refreshOrders()">🔄 Refresh Orders</button>
+
     <div id="ordersList" class="orders-container"></div>
 
     <script>
         let printer = null;
         let orders = [];
         
-        // Initialize Bluetooth printer
-        async function initPrinter() {
+        // Connect to Bluetooth printer - FIXED BUTTON
+        async function connectPrinter() {
             const statusDiv = document.getElementById('printerStatus');
+            statusDiv.innerHTML = '🔄 Searching for printer...';
+            statusDiv.style.background = '#f39c12';
             
-            if ('bluetooth' in navigator) {
-                try {
-                    // Check for previously paired printer
-                    const devices = await navigator.bluetooth.getDevices();
-                    const printerDevice = devices.find(device => 
-                        device.name && (device.name.includes('TM-m30') || device.name.includes('EPSON'))
-                    );
-                    
-                    if (printerDevice) {
-                        printer = printerDevice;
-                        statusDiv.innerHTML = '✅ Printer: ' + printerDevice.name;
-                        statusDiv.classList.add('connected');
-                    } else {
-                        statusDiv.innerHTML = '🔌 <button onclick="connectPrinter()" style="background: white; color: #2c3e50; border: none; padding: 4px 12px; border-radius: 20px; margin-left: 8px;">Connect Printer</button>';
-                    }
-                } catch (error) {
-                    console.error('Printer init error:', error);
-                    statusDiv.innerHTML = '⚠️ Bluetooth error. <button onclick="connectPrinter()">Retry</button>';
-                }
-            } else {
-                statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome on Android.';
+            if (!('bluetooth' in navigator)) {
+                statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome on Android!';
+                statusDiv.style.background = '#e74c3c';
+                alert('Web Bluetooth is not supported in this browser. Please use Google Chrome on Android.');
+                return;
             }
-        }
-        
-        // Connect to Bluetooth printer
-        window.connectPrinter = async function() {
-            const statusDiv = document.getElementById('printerStatus');
-            statusDiv.innerHTML = '🔄 Connecting...';
             
             try {
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [
                         { namePrefix: 'TM-m30' },
-                        { namePrefix: 'EPSON' }
+                        { namePrefix: 'EPSON' },
+                        { namePrefix: 'TM' }
                     ],
                     optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
                 });
                 
                 printer = device;
-                statusDiv.innerHTML = '✅ Printer: ' + device.name;
+                statusDiv.innerHTML = `✅ Connected: ${device.name} <button onclick="connectPrinter()">Change</button>`;
+                statusDiv.style.background = '#27ae60';
                 statusDiv.classList.add('connected');
                 
-                // Save for auto-reconnect
+                // Save printer name
                 localStorage.setItem('printerName', device.name);
+                
+                // Test connection
+                alert(`✅ Successfully connected to ${device.name}! New orders will print automatically.`);
+                
             } catch (error) {
-                console.error('Connection failed:', error);
-                statusDiv.innerHTML = '❌ Failed to connect. <button onclick="connectPrinter()">Retry</button>';
+                console.error('Connection error:', error);
+                statusDiv.innerHTML = `❌ Failed: ${error.message} <button onclick="connectPrinter()">Try Again</button>`;
+                statusDiv.style.background = '#e74c3c';
             }
-        };
+        }
         
         // Print ticket to thermal printer
         async function printTicket(order) {
             if (!printer) {
-                console.log('No printer connected, attempting to connect...');
-                await connectPrinter();
-                if (!printer) {
+                console.log('No printer connected');
+                const shouldConnect = confirm('Printer not connected. Would you like to connect now?');
+                if (shouldConnect) {
+                    await connectPrinter();
+                    if (!printer) {
+                        throw new Error('Printer not connected');
+                    }
+                } else {
                     throw new Error('Printer not connected');
                 }
             }
@@ -341,10 +359,9 @@
             receipt += `ADDRESS:\n${order.address}\n`;
             receipt += `───────────────────────────\n`;
             receipt += '\x1B\x61\x01';
-            receipt += `🔥 PRIORITY: NORMAL\n`;
+            receipt += `TOTAL: $${order.total}\n`;
             receipt += `═══════════════════════════\n`;
-            receipt += `\x1B\x64\x02'; // Feed 2 lines
-            receipt += '\x1B\x64\x02';
+            receipt += `\n\n\n`; // Feed lines
             
             return receipt;
         }
@@ -356,17 +373,22 @@
                 orders = JSON.parse(stored);
                 renderOrders();
                 updateStats();
+            } else {
+                orders = [];
+                renderOrders();
+                updateStats();
             }
         }
         
         // Save orders to localStorage
         function saveOrders() {
             localStorage.setItem('kitchen_orders', JSON.stringify(orders));
-            // Notify customer page
-            window.dispatchEvent(new StorageEvent('storage', {
-                key: 'kitchen_orders',
-                newValue: JSON.stringify(orders)
-            }));
+        }
+        
+        // Refresh orders (manual)
+        function refreshOrders() {
+            loadOrders();
+            alert('Orders refreshed!');
         }
         
         // Update order status
@@ -387,10 +409,12 @@
         
         // Delete order
         function deleteOrder(orderId) {
-            orders = orders.filter(o => o.orderId !== orderId);
-            saveOrders();
-            renderOrders();
-            updateStats();
+            if (confirm('Mark this order as complete? It will be removed from the list.')) {
+                orders = orders.filter(o => o.orderId !== orderId);
+                saveOrders();
+                renderOrders();
+                updateStats();
+            }
         }
         
         // Update statistics
@@ -413,7 +437,7 @@
             const container = document.getElementById('ordersList');
             
             if (orders.length === 0) {
-                container.innerHTML = '<div class="no-orders">🎉 No orders yet. Waiting for customers...</div>';
+                container.innerHTML = '<div class="no-orders">🎉 No orders yet. Place a test order from the customer page!</div>';
                 return;
             }
             
@@ -434,7 +458,7 @@
                         </div>
                         <div class="detail-row">
                             <div class="detail-label">Quantity:</div>
-                            <div class="detail-value">${order.quantity} x Cheese Pizza</div>
+                            <div class="detail-value">${order.quantity} x Cheese Pizza ($${order.total})</div>
                         </div>
                         <div class="detail-row">
                             <div class="detail-label">Address:</div>
@@ -446,10 +470,6 @@
                             <div class="detail-value">📝 ${order.notes}</div>
                         </div>
                         ` : ''}
-                        <div class="detail-row">
-                            <div class="detail-label">Total:</div>
-                            <div class="detail-value">$${order.total}</div>
-                        </div>
                     </div>
                     <div class="order-actions">
                         ${order.status === 'pending' ? `
@@ -457,6 +477,7 @@
                             <button class="btn btn-prepare" onclick="updateOrderStatus('${order.orderId}', 'preparing')">👨‍🍳 Start Preparing</button>
                         ` : ''}
                         ${order.status === 'preparing' ? `
+                            <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Reprint</button>
                             <button class="btn btn-ready" onclick="updateOrderStatus('${order.orderId}', 'ready')">✅ Mark Ready</button>
                         ` : ''}
                         ${order.status === 'ready' ? `
@@ -468,7 +489,7 @@
         }
         
         // Print single order
-        window.printSingleOrder = async function(orderId) {
+        async function printSingleOrder(orderId) {
             const order = orders.find(o => o.orderId === orderId);
             if (order) {
                 try {
@@ -478,21 +499,26 @@
                     alert('❌ Print failed: ' + error.message);
                 }
             }
-        };
+        }
         
         // Auto-print new orders
         let lastOrderCount = 0;
         function checkForNewOrders() {
             const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-            if (currentOrders.length > lastOrderCount) {
+            if (currentOrders.length > lastOrderCount && currentOrders.length > 0) {
                 // New order detected
-                const newOrder = currentOrders[0]; // Most recent order
+                const newOrder = currentOrders[0];
                 if (newOrder && newOrder.status === 'pending') {
                     console.log('New order detected, auto-printing...');
                     printTicket(newOrder).catch(err => {
                         console.error('Auto-print failed:', err);
+                        // Show visual alert
+                        const statusDiv = document.getElementById('printerStatus');
+                        statusDiv.innerHTML = '⚠️ Auto-print failed! <button onclick="connectPrinter()">Reconnect Printer</button>';
+                        statusDiv.style.background = '#e74c3c';
                     });
                 }
+                loadOrders(); // Reload to show new order
             }
             lastOrderCount = currentOrders.length;
         }
@@ -500,21 +526,32 @@
         // Listen for storage events (cross-tab communication)
         window.addEventListener('storage', (e) => {
             if (e.key === 'kitchen_orders') {
+                console.log('Storage event detected, reloading orders...');
                 loadOrders();
                 checkForNewOrders();
             }
         });
         
         // Make functions global for buttons
+        window.connectPrinter = connectPrinter;
         window.updateOrderStatus = updateOrderStatus;
         window.deleteOrder = deleteOrder;
+        window.printSingleOrder = printSingleOrder;
+        window.refreshOrders = refreshOrders;
         
         // Initialize
-        initPrinter();
         loadOrders();
         
         // Check for new orders every 2 seconds
         setInterval(checkForNewOrders, 2000);
+        
+        // Check if Bluetooth is supported
+        if (!('bluetooth' in navigator)) {
+            document.getElementById('printerStatus').innerHTML = '❌ Bluetooth NOT supported. Use Chrome browser!';
+            document.getElementById('printerStatus').style.background = '#e74c3c';
+        } else {
+            console.log('Web Bluetooth is supported');
+        }
     </script>
 </body>
 </html>
