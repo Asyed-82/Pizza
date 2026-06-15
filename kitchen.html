@@ -209,6 +209,32 @@
             color: #999;
         }
 
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 0.9em;
+            z-index: 1000;
+            display: none;
+        }
+
+        .toast.show {
+            display: block;
+            animation: fadeInOut 2s ease;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; bottom: 0; }
+            10% { opacity: 1; bottom: 20px; }
+            90% { opacity: 1; bottom: 20px; }
+            100% { opacity: 0; bottom: 0; }
+        }
+
         @media (max-width: 768px) {
             .detail-row {
                 flex-direction: column;
@@ -250,11 +276,24 @@
     <button class="refresh-btn" onclick="refreshOrders()">🔄 Refresh Orders</button>
 
     <div id="ordersList" class="orders-container"></div>
+    
+    <div id="toast" class="toast"></div>
 
     <script>
         let printer = null;
-        let server = null;
+        let gattServer = null;
         let orders = [];
+        
+        // Show toast message
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.style.background = isError ? '#e74c3c' : '#27ae60';
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
         
         // Connect to Bluetooth printer
         async function connectPrinter() {
@@ -265,7 +304,7 @@
             if (!('bluetooth' in navigator)) {
                 statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome on Android!';
                 statusDiv.style.background = '#e74c3c';
-                alert('Web Bluetooth is not supported in this browser. Please use Google Chrome on Android.');
+                showToast('Web Bluetooth not supported. Use Chrome browser.', true);
                 return;
             }
             
@@ -280,101 +319,138 @@
                 });
                 
                 printer = device;
+                
+                // Test connection by getting GATT server
+                gattServer = await printer.gatt.connect();
+                const service = await gattServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+                const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+                
+                // Keep the connection open
                 statusDiv.innerHTML = `✅ Connected: ${device.name} <button onclick="disconnectPrinter()">Disconnect</button>`;
                 statusDiv.style.background = '#27ae60';
                 statusDiv.classList.add('connected');
                 
                 localStorage.setItem('printerName', device.name);
-                alert(`✅ Successfully connected to ${device.name}! New orders will print automatically.`);
+                showToast(`✅ Connected to ${device.name}!`);
+                
+                // Send a test print
+                await testPrint();
                 
             } catch (error) {
                 console.error('Connection error:', error);
                 statusDiv.innerHTML = `❌ Failed: ${error.message} <button onclick="connectPrinter()">Try Again</button>`;
                 statusDiv.style.background = '#e74c3c';
+                showToast(`Connection failed: ${error.message}`, true);
+                gattServer = null;
+                printer = null;
+            }
+        }
+        
+        // Test print to verify printer works
+        async function testPrint() {
+            try {
+                const testData = '\x1B\x40\x1B\x61\x01TEST PRINT\n\x1B\x61\x00Kitchen Printer Ready!\n\n\n';
+                await sendToPrinter(testData);
+                showToast('✅ Test print sent! Check printer.');
+            } catch (error) {
+                console.error('Test print failed:', error);
+                showToast('Test print failed. Check printer connection.', true);
             }
         }
         
         // Disconnect printer
         async function disconnectPrinter() {
-            if (server) {
-                await server.disconnect();
-                server = null;
+            if (gattServer) {
+                try {
+                    await gattServer.disconnect();
+                } catch(e) {}
+                gattServer = null;
             }
             printer = null;
             const statusDiv = document.getElementById('printerStatus');
             statusDiv.innerHTML = `🔌 Printer: Disconnected <button onclick="connectPrinter()">Connect</button>`;
             statusDiv.style.background = '#e74c3c';
             statusDiv.classList.remove('connected');
+            showToast('Printer disconnected');
         }
         
-        // Send data to printer in chunks (solves 512-byte limit)
+        // Send data to printer (with chunking)
         async function sendToPrinter(data) {
             if (!printer) {
                 throw new Error('Printer not connected');
             }
             
             try {
-                // Connect to GATT server
-                server = await printer.gatt.connect();
-                const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+                // Reconnect if needed
+                if (!gattServer || !gattServer.connected) {
+                    gattServer = await printer.gatt.connect();
+                }
+                
+                const service = await gattServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
                 const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
                 
                 const encoder = new TextEncoder();
-                const bytes = encoder.encode(data);
-                const MAX_CHUNK = 490; // Safe limit under 512 bytes
+                let bytes = encoder.encode(data);
                 
-                // Send data in chunks
+                // ESC/POS commands need to be sent as raw bytes
+                const MAX_CHUNK = 490;
+                
                 for (let i = 0; i < bytes.length; i += MAX_CHUNK) {
-                    const chunk = bytes.slice(i, i + MAX_CHUNK);
+                    const chunk = bytes.slice(i, Math.min(i + MAX_CHUNK, bytes.length));
                     await characteristic.writeValue(chunk);
-                    await new Promise(resolve => setTimeout(resolve, 50)); // Small delay between chunks
+                    await new Promise(resolve => setTimeout(resolve, 30));
                 }
                 
-                await server.disconnect();
-                server = null;
                 return true;
             } catch (error) {
-                if (server) {
-                    try { await server.disconnect(); } catch(e) {}
-                    server = null;
-                }
+                console.error('Send error:', error);
+                // Try to reconnect on next attempt
+                gattServer = null;
                 throw error;
             }
         }
         
-        // Format kitchen receipt - OPTIMIZED for size
-        function formatKitchenReceipt(order) {
-            const timeStr = new Date().toLocaleTimeString();
+        // Format receipt for thermal printer (plain text, no complex ESC/POS)
+        function formatReceipt(order) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            const dateStr = now.toLocaleDateString();
             const shortId = order.orderId.slice(-8);
             
-            // Compact receipt format to stay under 512 bytes
+            // Plain text receipt - most compatible
             let receipt = '';
-            receipt += '\x1B\x40'; // Initialize
-            receipt += '\x1B\x61\x01'; // Center
-            receipt += 'PIZZA ORDER\n';
-            receipt += '============\n';
-            receipt += '\x1B\x61\x00'; // Left
-            receipt += `#${shortId}\n`;
-            receipt += `${timeStr}\n`;
-            receipt += `------------\n`;
-            receipt += `${order.quantity}x Cheese Pizza\n`;
-            receipt += `$${order.total}\n`;
-            receipt += `------------\n`;
-            receipt += `${order.customerName}\n`;
-            receipt += `${order.phone}\n`;
-            receipt += `${order.address.substring(0, 40)}\n`;
-            if (order.notes && order.notes.length > 0) {
-                receipt += `Note: ${order.notes.substring(0, 30)}\n`;
+            receipt += '\x1B\x40'; // Initialize printer
+            receipt += '\x1B\x61\x01'; // Center align
+            receipt += '===============================\n';
+            receipt += '       🍕 PIZZA ORDER 🍕        \n';
+            receipt += '===============================\n';
+            receipt += '\x1B\x61\x00'; // Left align
+            receipt += '\n';
+            receipt += `Order #: ${shortId}\n`;
+            receipt += `Date: ${dateStr} ${timeStr}\n`;
+            receipt += '-------------------------------\n';
+            receipt += `ITEM: Cheese Pizza\n`;
+            receipt += `QTY: ${order.quantity}\n`;
+            receipt += `TOTAL: $${order.total}\n`;
+            receipt += '-------------------------------\n';
+            receipt += `CUSTOMER: ${order.customerName}\n`;
+            receipt += `PHONE: ${order.phone}\n`;
+            receipt += `ADDRESS: ${order.address}\n`;
+            if (order.notes && order.notes.trim()) {
+                receipt += `NOTES: ${order.notes}\n`;
             }
-            receipt += `------------\n`;
-            receipt += '\x1B\x61\x01';
-            receipt += `THANK YOU!\n`;
-            receipt += `\n\n\n`;
+            receipt += '-------------------------------\n';
+            receipt += '\x1B\x61\x01'; // Center
+            receipt += 'THANK YOU!\n';
+            receipt += '===============================\n';
+            receipt += '\x1B\x61\x00'; // Left align
+            receipt += '\n\n\n';
+            receipt += '\x1B\x64\x02'; // Feed 2 lines
             
             return receipt;
         }
         
-        // Print ticket to thermal printer
+        // Print ticket
         async function printTicket(order) {
             if (!printer) {
                 const shouldConnect = confirm('Printer not connected. Connect now?');
@@ -389,13 +465,15 @@
             }
             
             try {
-                const receipt = formatKitchenReceipt(order);
-                console.log('Receipt size:', receipt.length, 'bytes');
+                showToast('🖨️ Printing ticket...');
+                const receipt = formatReceipt(order);
+                console.log('Receipt length:', receipt.length, 'characters');
                 await sendToPrinter(receipt);
-                console.log('Ticket printed for order:', order.orderId);
+                showToast('✅ Ticket printed successfully!');
                 return true;
             } catch (error) {
                 console.error('Print error:', error);
+                showToast(`❌ Print failed: ${error.message}`, true);
                 throw error;
             }
         }
@@ -404,25 +482,29 @@
         function loadOrders() {
             const stored = localStorage.getItem('kitchen_orders');
             if (stored) {
-                orders = JSON.parse(stored);
-                renderOrders();
-                updateStats();
+                try {
+                    orders = JSON.parse(stored);
+                } catch(e) {
+                    orders = [];
+                }
             } else {
                 orders = [];
-                renderOrders();
-                updateStats();
             }
+            renderOrders();
+            updateStats();
         }
         
         // Save orders to localStorage
         function saveOrders() {
             localStorage.setItem('kitchen_orders', JSON.stringify(orders));
+            // Dispatch event for customer page
+            window.dispatchEvent(new Event('storage'));
         }
         
         // Refresh orders
         function refreshOrders() {
             loadOrders();
-            alert('Orders refreshed!');
+            showToast('Orders refreshed!');
         }
         
         // Update order status
@@ -430,24 +512,21 @@
             const order = orders.find(o => o.orderId === orderId);
             if (order) {
                 order.status = newStatus;
-                if (newStatus === 'preparing') {
-                    order.preparedAt = new Date().toISOString();
-                } else if (newStatus === 'ready') {
-                    order.readyAt = new Date().toISOString();
-                }
                 saveOrders();
                 renderOrders();
                 updateStats();
+                showToast(`Order ${orderId.slice(-8)} marked as ${newStatus}`);
             }
         }
         
         // Delete order
         function deleteOrder(orderId) {
-            if (confirm('Mark order as complete?')) {
+            if (confirm('Complete this order?')) {
                 orders = orders.filter(o => o.orderId !== orderId);
                 saveOrders();
                 renderOrders();
                 updateStats();
+                showToast('Order completed');
             }
         }
         
@@ -466,6 +545,14 @@
             document.getElementById('todayCount').textContent = today;
         }
         
+        // Escape HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
         // Render orders list
         function renderOrders() {
             const container = document.getElementById('ordersList');
@@ -478,7 +565,7 @@
             container.innerHTML = orders.map(order => `
                 <div class="order-card ${order.status}">
                     <div class="order-header">
-                        <div class="order-id">${order.orderId}</div>
+                        <div class="order-id">${escapeHtml(order.orderId)}</div>
                         <div class="order-time">${new Date(order.timestamp).toLocaleString()}</div>
                     </div>
                     <div class="order-details">
@@ -522,79 +609,66 @@
             `).join('');
         }
         
-        // Escape HTML to prevent XSS
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
         // Print single order
         async function printSingleOrder(orderId) {
             const order = orders.find(o => o.orderId === orderId);
             if (order) {
-                const btn = event.target;
-                const originalText = btn.textContent;
-                btn.textContent = '🖨️ Printing...';
-                btn.disabled = true;
-                
                 try {
                     await printTicket(order);
-                    alert('✅ Ticket printed successfully!');
                 } catch (error) {
-                    alert('❌ Print failed: ' + error.message);
-                } finally {
-                    btn.textContent = originalText;
-                    btn.disabled = false;
+                    console.error('Print failed:', error);
                 }
             }
         }
         
         // Auto-print new orders
         let lastOrderCount = 0;
-        let isPrinting = false;
+        let isProcessing = false;
         
         async function checkForNewOrders() {
-            if (isPrinting) return;
+            if (isProcessing) return;
             
             const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
             
             if (currentOrders.length > lastOrderCount && currentOrders.length > 0) {
                 const newOrder = currentOrders[0];
-                if (newOrder && newOrder.status === 'pending') {
-                    console.log('New order detected, auto-printing...');
-                    isPrinting = true;
+                if (newOrder && newOrder.status === 'pending' && newOrder.orderId !== lastOrderId) {
+                    console.log('New order detected:', newOrder.orderId);
+                    isProcessing = true;
                     
                     try {
                         await printTicket(newOrder);
-                        console.log('Auto-print successful');
-                        
-                        // Update status to show printed
-                        const statusDiv = document.getElementById('printerStatus');
-                        statusDiv.innerHTML = `✅ Connected: ${printer ? printer.name : 'TM-m30III'} <button onclick="disconnectPrinter()">Disconnect</button>`;
-                        statusDiv.style.background = '#27ae60';
-                        
+                        showToast(`🖨️ New order printed! ${newOrder.orderId.slice(-8)}`);
                     } catch (err) {
                         console.error('Auto-print failed:', err);
-                        const statusDiv = document.getElementById('printerStatus');
-                        statusDiv.innerHTML = `⚠️ Auto-print failed! <button onclick="connectPrinter()">Reconnect</button>`;
-                        statusDiv.style.background = '#e74c3c';
+                        showToast(`⚠️ Auto-print failed. Click Print Ticket manually.`, true);
                     } finally {
-                        isPrinting = false;
+                        isProcessing = false;
                     }
                 }
                 loadOrders();
             }
             lastOrderCount = currentOrders.length;
+            if (currentOrders.length > 0) {
+                lastOrderId = currentOrders[0].orderId;
+            }
         }
+        
+        let lastOrderId = '';
         
         // Listen for storage events
         window.addEventListener('storage', (e) => {
             if (e.key === 'kitchen_orders') {
                 console.log('Storage event detected');
                 loadOrders();
-                checkForNewOrders();
+                setTimeout(checkForNewOrders, 500);
             }
+        });
+        
+        // Also listen for custom events
+        window.addEventListener('local-storage', () => {
+            loadOrders();
+            checkForNewOrders();
         });
         
         // Make functions global
@@ -617,21 +691,21 @@
             document.getElementById('printerStatus').style.background = '#e74c3c';
         }
         
-        // Try to reconnect to previously connected printer
+        // Auto-reconnect on page load
         async function autoReconnect() {
             const savedPrinterName = localStorage.getItem('printerName');
             if (savedPrinterName && !printer) {
-                console.log('Attempting auto-reconnect...');
                 try {
                     const devices = await navigator.bluetooth.getDevices();
                     const savedDevice = devices.find(d => d.name === savedPrinterName);
                     if (savedDevice) {
                         printer = savedDevice;
+                        gattServer = await printer.gatt.connect();
                         const statusDiv = document.getElementById('printerStatus');
                         statusDiv.innerHTML = `✅ Connected: ${printer.name} <button onclick="disconnectPrinter()">Disconnect</button>`;
                         statusDiv.style.background = '#27ae60';
                         statusDiv.classList.add('connected');
-                        console.log('Auto-reconnected successfully');
+                        showToast(`Auto-reconnected to ${printer.name}`);
                     }
                 } catch (error) {
                     console.log('Auto-reconnect failed:', error);
