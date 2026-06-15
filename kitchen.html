@@ -15,6 +15,7 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background: #f5f5f5;
             padding: 16px;
+            padding-bottom: 80px;
         }
 
         .header {
@@ -49,7 +50,7 @@
 
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 12px;
             margin-bottom: 20px;
         }
@@ -69,19 +70,19 @@
         }
 
         .stat-label {
-            font-size: 0.8em;
+            font-size: 0.75em;
             color: #666;
             margin-top: 4px;
         }
 
         .refresh-info {
-            background: #e8f5e9;
-            padding: 10px;
+            background: #3498db;
+            color: white;
+            padding: 12px;
             border-radius: 12px;
             margin-bottom: 20px;
             text-align: center;
             font-size: 0.85em;
-            color: #2c3e50;
         }
 
         .orders-container {
@@ -96,7 +97,6 @@
             padding: 20px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             border-left: 5px solid #ff6b35;
-            transition: all 0.3s;
         }
 
         .order-card.preparing {
@@ -120,12 +120,12 @@
 
         .order-id {
             font-weight: bold;
-            font-size: 1.2em;
+            font-size: 1.1em;
             color: #2c3e50;
         }
 
         .order-time {
-            font-size: 0.8em;
+            font-size: 0.7em;
             color: #999;
         }
 
@@ -136,58 +136,51 @@
         .detail-row {
             display: flex;
             margin-bottom: 8px;
-            font-size: 0.9em;
+            font-size: 0.85em;
         }
 
         .detail-label {
             font-weight: 600;
-            width: 100px;
+            width: 80px;
             color: #555;
         }
 
         .detail-value {
             flex: 1;
             color: #333;
+            word-break: break-word;
         }
 
         .order-actions {
             display: flex;
-            gap: 12px;
+            gap: 10px;
             margin-top: 16px;
             flex-wrap: wrap;
         }
 
         .btn {
-            padding: 10px 20px;
+            padding: 8px 16px;
             border: none;
             border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
-            font-size: 0.9em;
-            transition: all 0.2s;
-        }
-
-        .btn:active {
-            transform: scale(0.98);
-        }
-
-        .btn-prepare {
-            background: #f39c12;
-            color: white;
-        }
-
-        .btn-ready {
-            background: #27ae60;
-            color: white;
-        }
-
-        .btn-complete {
-            background: #3498db;
-            color: white;
+            font-size: 0.85em;
         }
 
         .btn-print {
             background: #34495e;
+            color: white;
+        }
+        .btn-prepare {
+            background: #f39c12;
+            color: white;
+        }
+        .btn-ready {
+            background: #27ae60;
+            color: white;
+        }
+        .btn-complete {
+            background: #3498db;
             color: white;
         }
 
@@ -195,6 +188,8 @@
             text-align: center;
             padding: 40px;
             color: #999;
+            background: white;
+            border-radius: 16px;
         }
 
         .toast {
@@ -206,9 +201,10 @@
             color: white;
             padding: 12px 24px;
             border-radius: 30px;
-            font-size: 0.9em;
+            font-size: 0.85em;
             z-index: 1000;
             display: none;
+            white-space: nowrap;
         }
 
         .toast.show {
@@ -222,38 +218,22 @@
             90% { opacity: 1; bottom: 20px; }
             100% { opacity: 0; bottom: 0; }
         }
-
-        @media (max-width: 768px) {
-            .detail-row {
-                flex-direction: column;
-            }
-            .detail-label {
-                width: auto;
-                margin-bottom: 4px;
-            }
-            .order-actions {
-                flex-wrap: wrap;
-            }
-            .btn {
-                flex: 1;
-            }
-        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🍕 Kitchen Dashboard</h1>
-        <div id="printerStatus" class="printer-status" onclick="connectPrinter()">🔌 Tap to Connect Printer</div>
+        <div id="printerStatus" class="printer-status" onclick="connectPrinter()">🔌 Tap to Connect</div>
     </div>
 
-    <div class="refresh-info">
-        🔄 Auto-refresh every 2 seconds | Orders print automatically
+    <div class="refresh-info" id="refreshInfo">
+        🔄 Monitoring for new orders...
     </div>
 
     <div class="stats">
         <div class="stat-card">
             <div class="stat-number" id="pendingCount">0</div>
-            <div class="stat-label">Pending Orders</div>
+            <div class="stat-label">Pending</div>
         </div>
         <div class="stat-card">
             <div class="stat-number" id="preparingCount">0</div>
@@ -261,7 +241,7 @@
         </div>
         <div class="stat-card">
             <div class="stat-number" id="todayCount">0</div>
-            <div class="stat-label">Today's Orders</div>
+            <div class="stat-label">Today</div>
         </div>
     </div>
 
@@ -272,7 +252,6 @@
         let printer = null;
         let printerServer = null;
         let orders = [];
-        let lastOrderIds = [];
         
         function showToast(msg, isError = false) {
             const toast = document.getElementById('toast');
@@ -281,22 +260,21 @@
             toast.classList.add('show');
             setTimeout(() => {
                 toast.classList.remove('show');
-            }, 3000);
+            }, 2500);
         }
         
-        // Create receipt text
+        // Create receipt
         function createReceipt(order) {
             const shortId = order.orderId.slice(-8);
             const now = new Date();
             const timeStr = now.toLocaleTimeString();
-            const dateStr = now.toLocaleDateString();
             
             let text = "";
             text += "\n\n";
             text += "=== PIZZA ORDER ===\n";
             text += "==================\n";
             text += `Order: ${shortId}\n`;
-            text += `Time: ${dateStr} ${timeStr}\n`;
+            text += `Time: ${timeStr}\n`;
             text += `Item: Cheese Pizza\n`;
             text += `Qty: ${order.quantity}\n`;
             text += `Total: $${order.total}\n`;
@@ -310,52 +288,38 @@
             text += "==================\n";
             text += "THANK YOU!\n";
             text += "\n\n\n";
-            
             return new TextEncoder().encode(text);
         }
         
         // Send to printer
         async function sendToPrinter(data) {
-            if (!printer) {
-                throw new Error('No printer');
+            if (!printer) throw new Error('No printer');
+            if (!printerServer || !printerServer.connected) {
+                printerServer = await printer.gatt.connect();
             }
-            
-            try {
-                if (!printerServer || !printerServer.connected) {
-                    printerServer = await printer.gatt.connect();
-                }
-                
-                const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-                const char = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-                
-                const MAX = 480;
-                for (let i = 0; i < data.length; i += MAX) {
-                    const chunk = data.slice(i, i + MAX);
-                    await char.writeValue(chunk);
-                    await new Promise(r => setTimeout(r, 30));
-                }
-                return true;
-            } catch (err) {
-                printerServer = null;
-                throw err;
+            const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+            const char = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+            const MAX = 480;
+            for (let i = 0; i < data.length; i += MAX) {
+                await char.writeValue(data.slice(i, i + MAX));
+                await new Promise(r => setTimeout(r, 30));
             }
+            return true;
         }
         
         // Print order
         async function printOrder(order) {
             if (!printer) {
-                showToast('❌ Printer not connected. Tap the red button to connect.', true);
+                showToast('❌ Printer not connected. Tap red button.', true);
                 return false;
             }
-            
             try {
                 showToast('🖨️ Printing...');
-                const receipt = createReceipt(order);
-                await sendToPrinter(receipt);
+                await sendToPrinter(createReceipt(order));
                 showToast('✅ Printed!');
                 return true;
             } catch (err) {
-                showToast('❌ Print failed: ' + err.message, true);
+                showToast('❌ Print failed', true);
                 return false;
             }
         }
@@ -363,124 +327,62 @@
         // Connect to printer
         async function connectPrinter() {
             const statusDiv = document.getElementById('printerStatus');
-            
             if (!('bluetooth' in navigator)) {
-                statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome!';
-                statusDiv.style.background = '#e74c3c';
+                statusDiv.innerHTML = '❌ Use Chrome!';
                 showToast('Please use Chrome browser', true);
                 return;
             }
-            
             statusDiv.innerHTML = '🔄 Searching...';
             statusDiv.style.background = '#f39c12';
-            
             try {
                 const device = await navigator.bluetooth.requestDevice({
-                    filters: [
-                        { namePrefix: 'TM' },
-                        { namePrefix: 'EPSON' }
-                    ],
+                    filters: [{ namePrefix: 'TM' }, { namePrefix: 'EPSON' }],
                     optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
                 });
-                
                 printer = device;
                 printerServer = await printer.gatt.connect();
-                
-                // Test print
                 const testData = new TextEncoder().encode("\n=== Printer Ready ===\n\n");
                 const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
                 const testChar = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
                 await testChar.writeValue(testData);
-                
                 statusDiv.innerHTML = '✅ ' + device.name;
                 statusDiv.style.background = '#27ae60';
                 statusDiv.classList.add('connected');
-                
                 localStorage.setItem('savedPrinter', device.name);
-                showToast('✅ Connected to ' + device.name);
-                
+                showToast('✅ Connected!');
             } catch (err) {
-                console.error(err);
-                statusDiv.innerHTML = '❌ Tap to Retry';
+                statusDiv.innerHTML = '❌ Tap to retry';
                 statusDiv.style.background = '#e74c3c';
-                showToast('Connection failed: ' + err.message, true);
                 printer = null;
-                printerServer = null;
             }
         }
         
-        // Load orders from localStorage
-        function loadOrders() {
+        // Load and display orders
+        function refreshDisplay() {
             const stored = localStorage.getItem('kitchen_orders');
             if (stored) {
                 try {
                     orders = JSON.parse(stored);
-                } catch(e) {
-                    orders = [];
-                }
+                } catch(e) { orders = []; }
             } else {
                 orders = [];
             }
-            renderOrders();
-            updateStats();
-        }
-        
-        function saveOrders() {
-            localStorage.setItem('kitchen_orders', JSON.stringify(orders));
-        }
-        
-        function updateStats() {
+            
+            // Update stats
             const pending = orders.filter(o => o.status === 'pending').length;
             const preparing = orders.filter(o => o.status === 'preparing').length;
             const today = orders.filter(o => {
-                const today = new Date().toDateString();
-                const orderDate = new Date(o.timestamp).toDateString();
-                return orderDate === today;
+                const todayDate = new Date().toDateString();
+                return new Date(o.timestamp).toDateString() === todayDate;
             }).length;
-            
             document.getElementById('pendingCount').textContent = pending;
             document.getElementById('preparingCount').textContent = preparing;
             document.getElementById('todayCount').textContent = today;
-        }
-        
-        function updateOrderStatus(orderId, newStatus) {
-            const order = orders.find(o => o.orderId === orderId);
-            if (order) {
-                order.status = newStatus;
-                saveOrders();
-                loadOrders();
-                showToast(`Order ${orderId.slice(-8)}: ${newStatus}`);
-            }
-        }
-        
-        function deleteOrder(orderId) {
-            if (confirm('Complete this order?')) {
-                orders = orders.filter(o => o.orderId !== orderId);
-                saveOrders();
-                loadOrders();
-                showToast('Order completed');
-            }
-        }
-        
-        function printSingleOrder(orderId) {
-            const order = orders.find(o => o.orderId === orderId);
-            if (order) {
-                printOrder(order);
-            }
-        }
-        
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        function renderOrders() {
-            const container = document.getElementById('ordersList');
             
+            // Render orders
+            const container = document.getElementById('ordersList');
             if (orders.length === 0) {
-                container.innerHTML = '<div class="no-orders">🎉 No orders yet. Place an order from the customer page!</div>';
+                container.innerHTML = '<div class="no-orders">📭 No orders yet. Place an order from customer page!</div>';
                 return;
             }
             
@@ -491,37 +393,20 @@
                         <div class="order-time">${new Date(order.timestamp).toLocaleString()}</div>
                     </div>
                     <div class="order-details">
-                        <div class="detail-row">
-                            <div class="detail-label">Customer:</div>
-                            <div class="detail-value">${escapeHtml(order.customerName)}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Phone:</div>
-                            <div class="detail-value">${escapeHtml(order.phone)}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Quantity:</div>
-                            <div class="detail-value">${order.quantity} x Cheese Pizza ($${order.total})</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Address:</div>
-                            <div class="detail-value">${escapeHtml(order.address)}</div>
-                        </div>
-                        ${order.notes ? `
-                        <div class="detail-row">
-                            <div class="detail-label">Notes:</div>
-                            <div class="detail-value">📝 ${escapeHtml(order.notes)}</div>
-                        </div>
-                        ` : ''}
+                        <div class="detail-row"><div class="detail-label">Name:</div><div class="detail-value">${escapeHtml(order.customerName)}</div></div>
+                        <div class="detail-row"><div class="detail-label">Phone:</div><div class="detail-value">${escapeHtml(order.phone)}</div></div>
+                        <div class="detail-row"><div class="detail-label">Qty:</div><div class="detail-value">${order.quantity} x Cheese Pizza ($${order.total})</div></div>
+                        <div class="detail-row"><div class="detail-label">Address:</div><div class="detail-value">${escapeHtml(order.address)}</div></div>
+                        ${order.notes ? `<div class="detail-row"><div class="detail-label">Notes:</div><div class="detail-value">📝 ${escapeHtml(order.notes)}</div></div>` : ''}
                     </div>
                     <div class="order-actions">
                         ${order.status === 'pending' ? `
-                            <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Print</button>
-                            <button class="btn btn-prepare" onclick="updateOrderStatus('${order.orderId}', 'preparing')">👨‍🍳 Start</button>
+                            <button class="btn btn-print" onclick="printOrderById('${order.orderId}')">🖨️ Print</button>
+                            <button class="btn btn-prepare" onclick="updateStatus('${order.orderId}', 'preparing')">👨‍🍳 Start</button>
                         ` : ''}
                         ${order.status === 'preparing' ? `
-                            <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Reprint</button>
-                            <button class="btn btn-ready" onclick="updateOrderStatus('${order.orderId}', 'ready')">✅ Ready</button>
+                            <button class="btn btn-print" onclick="printOrderById('${order.orderId}')">🖨️ Reprint</button>
+                            <button class="btn btn-ready" onclick="updateStatus('${order.orderId}', 'ready')">✅ Ready</button>
                         ` : ''}
                         ${order.status === 'ready' ? `
                             <button class="btn btn-complete" onclick="deleteOrder('${order.orderId}')">✔️ Complete</button>
@@ -529,84 +414,114 @@
                     </div>
                 </div>
             `).join('');
+            
+            document.getElementById('refreshInfo').innerHTML = `🔄 Last checked: ${new Date().toLocaleTimeString()} | ${orders.length} order(s)`;
         }
         
-        // Auto check for new orders every 2 seconds
-        async function checkNewOrders() {
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function saveOrders() {
+            localStorage.setItem('kitchen_orders', JSON.stringify(orders));
+        }
+        
+        function updateStatus(orderId, newStatus) {
+            const order = orders.find(o => o.orderId === orderId);
+            if (order) {
+                order.status = newStatus;
+                saveOrders();
+                refreshDisplay();
+                showToast(`Order ${orderId.slice(-8)}: ${newStatus}`);
+            }
+        }
+        
+        function deleteOrder(orderId) {
+            if (confirm('Complete this order?')) {
+                orders = orders.filter(o => o.orderId !== orderId);
+                saveOrders();
+                refreshDisplay();
+                showToast('Order completed');
+            }
+        }
+        
+        async function printOrderById(orderId) {
+            const order = orders.find(o => o.orderId === orderId);
+            if (order) {
+                await printOrder(order);
+            }
+        }
+        
+        // Check for NEW orders and auto-print
+        let lastOrderCount = 0;
+        
+        function checkAndAutoPrint() {
             const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-            const currentIds = currentOrders.map(o => o.orderId);
             
-            // Find new orders
-            const newOrders = currentOrders.filter(order => {
-                return !lastOrderIds.includes(order.orderId) && order.status === 'pending';
-            });
-            
-            if (newOrders.length > 0) {
-                console.log('New orders found:', newOrders.length);
-                for (const order of newOrders) {
+            // If there are more orders than before
+            if (currentOrders.length > lastOrderCount && currentOrders.length > 0) {
+                const newestOrder = currentOrders[0];
+                // Check if it's a pending order (new)
+                if (newestOrder && newestOrder.status === 'pending') {
+                    console.log('New order found!', newestOrder.orderId);
                     showToast(`🆕 New order! Printing...`);
-                    await printOrder(order);
+                    printOrder(newestOrder).then(() => {
+                        refreshDisplay();
+                    });
                 }
-                loadOrders(); // Refresh display
             }
             
-            lastOrderIds = currentIds;
+            lastOrderCount = currentOrders.length;
+            refreshDisplay();
         }
         
-        // Make functions global for buttons
+        // Make global functions
         window.connectPrinter = connectPrinter;
-        window.updateOrderStatus = updateOrderStatus;
+        window.updateStatus = updateStatus;
         window.deleteOrder = deleteOrder;
-        window.printSingleOrder = printSingleOrder;
+        window.printOrderById = printOrderById;
         
-        // Auto-reconnect to saved printer
-        async function autoReconnect() {
-            const savedName = localStorage.getItem('savedPrinter');
-            if (savedName && !printer) {
-                try {
-                    const devices = await navigator.bluetooth.getDevices();
-                    const saved = devices.find(d => d.name === savedName);
-                    if (saved) {
-                        printer = saved;
-                        printerServer = await printer.gatt.connect();
-                        const statusDiv = document.getElementById('printerStatus');
-                        statusDiv.innerHTML = '✅ ' + saved.name;
-                        statusDiv.style.background = '#27ae60';
-                        statusDiv.classList.add('connected');
-                        showToast('Reconnected to printer');
-                    }
-                } catch(e) {
-                    console.log('Auto-reconnect failed');
-                }
-            }
-        }
+        // Start auto-refresh every 2 seconds
+        setInterval(checkAndAutoPrint, 2000);
         
-        // Initialize
-        loadOrders();
-        
-        // Set initial order IDs
-        const initial = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-        lastOrderIds = initial.map(o => o.orderId);
-        
-        // Start auto-check every 2 seconds
-        setInterval(checkNewOrders, 2000);
-        console.log('Auto-check started - checking every 2 seconds');
-        
-        // Listen for storage events
+        // Also listen for storage events
         window.addEventListener('storage', (e) => {
             if (e.key === 'kitchen_orders') {
-                console.log('Storage event - checking');
-                checkNewOrders();
+                console.log('Storage event detected');
+                checkAndAutoPrint();
             }
         });
         
-        // Auto reconnect
-        setTimeout(autoReconnect, 1000);
+        // Initial load
+        refreshDisplay();
+        const initialOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+        lastOrderCount = initialOrders.length;
+        
+        // Auto reconnect to printer
+        setTimeout(async () => {
+            const saved = localStorage.getItem('savedPrinter');
+            if (saved && !printer) {
+                try {
+                    const devices = await navigator.bluetooth.getDevices();
+                    const found = devices.find(d => d.name === saved);
+                    if (found) {
+                        printer = found;
+                        printerServer = await printer.gatt.connect();
+                        document.getElementById('printerStatus').innerHTML = '✅ ' + saved;
+                        document.getElementById('printerStatus').style.background = '#27ae60';
+                        document.getElementById('printerStatus').classList.add('connected');
+                        showToast('Printer reconnected');
+                    }
+                } catch(e) {}
+            }
+        }, 1000);
         
         // Bluetooth support check
         if (!('bluetooth' in navigator)) {
-            document.getElementById('printerStatus').innerHTML = '❌ Bluetooth not supported';
-            document.getElementById('printerStatus').style.background = '#e74c3c';
+            document.getElementById('printerStatus').innerHTML = '❌ Chrome only';
         }
     </script>
 </body>
