@@ -243,11 +243,11 @@
 <body>
     <div class="header">
         <h1>🍕 Kitchen Dashboard</h1>
-        <div id="printerStatus" class="printer-status" onclick="connectPrinter()">🔌 Click to Connect Printer</div>
+        <div id="printerStatus" class="printer-status" onclick="connectPrinter()">🔌 Tap to Connect Printer</div>
     </div>
 
     <div class="refresh-info">
-        🔄 Auto-refreshing every 2 seconds | Auto-printing enabled
+        🔄 Auto-refresh every 2 seconds | Orders print automatically
     </div>
 
     <div class="stats">
@@ -269,25 +269,23 @@
     <div id="toast" class="toast"></div>
 
     <script>
-        let printerDevice = null;
+        let printer = null;
         let printerServer = null;
         let orders = [];
-        let knownOrderIds = [];
+        let lastOrderIds = [];
         
-        // Show message
-        function showMessage(text, isError = false) {
+        function showToast(msg, isError = false) {
             const toast = document.getElementById('toast');
-            toast.textContent = text;
+            toast.textContent = msg;
             toast.style.background = isError ? '#e74c3c' : '#27ae60';
             toast.classList.add('show');
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 3000);
-            console.log(text);
         }
         
-        // Simple receipt text
-        function makeReceipt(order) {
+        // Create receipt text
+        function createReceipt(order) {
             const shortId = order.orderId.slice(-8);
             const now = new Date();
             const timeStr = now.toLocaleTimeString();
@@ -298,16 +296,16 @@
             text += "=== PIZZA ORDER ===\n";
             text += "==================\n";
             text += `Order: ${shortId}\n`;
-            text += `Time: ${dateStr} ${timeStr}\n";
+            text += `Time: ${dateStr} ${timeStr}\n`;
             text += `Item: Cheese Pizza\n`;
             text += `Qty: ${order.quantity}\n`;
             text += `Total: $${order.total}\n`;
             text += "------------------\n";
             text += `${order.customerName}\n`;
             text += `${order.phone}\n`;
-            text += `${order.address.substring(0, 35)}\n`;
+            text += `${order.address}\n`;
             if (order.notes && order.notes.trim()) {
-                text += `Note: ${order.notes.substring(0, 30)}\n`;
+                text += `Note: ${order.notes}\n`;
             }
             text += "==================\n";
             text += "THANK YOU!\n";
@@ -318,26 +316,24 @@
         
         // Send to printer
         async function sendToPrinter(data) {
-            if (!printerDevice) {
-                throw new Error('No printer connected');
+            if (!printer) {
+                throw new Error('No printer');
             }
             
             try {
                 if (!printerServer || !printerServer.connected) {
-                    printerServer = await printerDevice.gatt.connect();
+                    printerServer = await printer.gatt.connect();
                 }
                 
                 const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-                const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+                const char = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
                 
-                // Send in chunks if needed
-                const MAX_SIZE = 490;
-                for (let i = 0; i < data.length; i += MAX_SIZE) {
-                    const chunk = data.slice(i, i + MAX_SIZE);
-                    await characteristic.writeValue(chunk);
+                const MAX = 480;
+                for (let i = 0; i < data.length; i += MAX) {
+                    const chunk = data.slice(i, i + MAX);
+                    await char.writeValue(chunk);
                     await new Promise(r => setTimeout(r, 30));
                 }
-                
                 return true;
             } catch (err) {
                 printerServer = null;
@@ -347,20 +343,19 @@
         
         // Print order
         async function printOrder(order) {
-            if (!printerDevice) {
-                showMessage('❌ Printer not connected. Click the red button to connect.', true);
+            if (!printer) {
+                showToast('❌ Printer not connected. Tap the red button to connect.', true);
                 return false;
             }
             
             try {
-                showMessage('🖨️ Printing...');
-                const receipt = makeReceipt(order);
+                showToast('🖨️ Printing...');
+                const receipt = createReceipt(order);
                 await sendToPrinter(receipt);
-                showMessage('✅ Printed!');
+                showToast('✅ Printed!');
                 return true;
             } catch (err) {
-                console.error(err);
-                showMessage('❌ Print failed: ' + err.message, true);
+                showToast('❌ Print failed: ' + err.message, true);
                 return false;
             }
         }
@@ -372,7 +367,7 @@
             if (!('bluetooth' in navigator)) {
                 statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome!';
                 statusDiv.style.background = '#e74c3c';
-                showMessage('Web Bluetooth not supported. Please use Chrome browser.', true);
+                showToast('Please use Chrome browser', true);
                 return;
             }
             
@@ -388,11 +383,11 @@
                     optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
                 });
                 
-                printerDevice = device;
-                printerServer = await printerDevice.gatt.connect();
+                printer = device;
+                printerServer = await printer.gatt.connect();
                 
                 // Test print
-                const testData = new TextEncoder().encode("\n=== Kitchen Printer Ready ===\n\n");
+                const testData = new TextEncoder().encode("\n=== Printer Ready ===\n\n");
                 const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
                 const testChar = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
                 await testChar.writeValue(testData);
@@ -402,19 +397,19 @@
                 statusDiv.classList.add('connected');
                 
                 localStorage.setItem('savedPrinter', device.name);
-                showMessage('✅ Connected to ' + device.name);
+                showToast('✅ Connected to ' + device.name);
                 
             } catch (err) {
                 console.error(err);
-                statusDiv.innerHTML = '❌ Failed. Click to retry';
+                statusDiv.innerHTML = '❌ Tap to Retry';
                 statusDiv.style.background = '#e74c3c';
-                showMessage('Connection failed: ' + err.message, true);
-                printerDevice = null;
+                showToast('Connection failed: ' + err.message, true);
+                printer = null;
                 printerServer = null;
             }
         }
         
-        // Load orders
+        // Load orders from localStorage
         function loadOrders() {
             const stored = localStorage.getItem('kitchen_orders');
             if (stored) {
@@ -454,7 +449,7 @@
                 order.status = newStatus;
                 saveOrders();
                 loadOrders();
-                showMessage(`Order ${orderId.slice(-8)}: ${newStatus}`);
+                showToast(`Order ${orderId.slice(-8)}: ${newStatus}`);
             }
         }
         
@@ -463,7 +458,7 @@
                 orders = orders.filter(o => o.orderId !== orderId);
                 saveOrders();
                 loadOrders();
-                showMessage('Order completed');
+                showToast('Order completed');
             }
         }
         
@@ -536,32 +531,29 @@
             `).join('');
         }
         
-        // Auto refresh and print - runs every 2 seconds
-        async function autoRefresh() {
-            // Get current orders
+        // Auto check for new orders every 2 seconds
+        async function checkNewOrders() {
             const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-            const currentOrderIds = currentOrders.map(o => o.orderId);
+            const currentIds = currentOrders.map(o => o.orderId);
             
             // Find new orders
             const newOrders = currentOrders.filter(order => {
-                return !knownOrderIds.includes(order.orderId) && order.status === 'pending';
+                return !lastOrderIds.includes(order.orderId) && order.status === 'pending';
             });
             
-            // Print new orders
             if (newOrders.length > 0) {
+                console.log('New orders found:', newOrders.length);
                 for (const order of newOrders) {
-                    showMessage(`🆕 New order! Printing...`);
+                    showToast(`🆕 New order! Printing...`);
                     await printOrder(order);
                 }
-                // Reload display
-                loadOrders();
+                loadOrders(); // Refresh display
             }
             
-            // Update known orders
-            knownOrderIds = currentOrderIds;
+            lastOrderIds = currentIds;
         }
         
-        // Make functions global
+        // Make functions global for buttons
         window.connectPrinter = connectPrinter;
         window.updateOrderStatus = updateOrderStatus;
         window.deleteOrder = deleteOrder;
@@ -570,18 +562,18 @@
         // Auto-reconnect to saved printer
         async function autoReconnect() {
             const savedName = localStorage.getItem('savedPrinter');
-            if (savedName && !printerDevice) {
+            if (savedName && !printer) {
                 try {
                     const devices = await navigator.bluetooth.getDevices();
                     const saved = devices.find(d => d.name === savedName);
                     if (saved) {
-                        printerDevice = saved;
-                        printerServer = await printerDevice.gatt.connect();
+                        printer = saved;
+                        printerServer = await printer.gatt.connect();
                         const statusDiv = document.getElementById('printerStatus');
                         statusDiv.innerHTML = '✅ ' + saved.name;
                         statusDiv.style.background = '#27ae60';
                         statusDiv.classList.add('connected');
-                        showMessage('Auto-reconnected to printer');
+                        showToast('Reconnected to printer');
                     }
                 } catch(e) {
                     console.log('Auto-reconnect failed');
@@ -589,29 +581,29 @@
             }
         }
         
-        // Start everything
+        // Initialize
         loadOrders();
         
-        // Set initial known orders
-        const initialOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-        knownOrderIds = initialOrders.map(o => o.orderId);
+        // Set initial order IDs
+        const initial = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+        lastOrderIds = initial.map(o => o.orderId);
         
-        // Start auto-refresh every 2 seconds
-        setInterval(autoRefresh, 2000);
-        console.log('Auto-refresh started - checking every 2 seconds');
+        // Start auto-check every 2 seconds
+        setInterval(checkNewOrders, 2000);
+        console.log('Auto-check started - checking every 2 seconds');
         
-        // Also listen for storage events
+        // Listen for storage events
         window.addEventListener('storage', (e) => {
             if (e.key === 'kitchen_orders') {
-                console.log('Storage event - checking orders');
-                autoRefresh();
+                console.log('Storage event - checking');
+                checkNewOrders();
             }
         });
         
-        // Auto-reconnect
+        // Auto reconnect
         setTimeout(autoReconnect, 1000);
         
-        // Bluetooth check
+        // Bluetooth support check
         if (!('bluetooth' in navigator)) {
             document.getElementById('printerStatus').innerHTML = '❌ Bluetooth not supported';
             document.getElementById('printerStatus').style.background = '#e74c3c';
