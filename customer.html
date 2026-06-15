@@ -210,9 +210,6 @@
     <script>
         const PIZZA_PRICE = 12.99;
         
-        // Get API base URL (use relative path for GitHub Pages)
-        const API_BASE = window.location.origin;
-        
         // Update total price when quantity changes
         document.getElementById('quantity').addEventListener('change', function() {
             const total = (PIZZA_PRICE * parseInt(this.value)).toFixed(2);
@@ -226,7 +223,7 @@
         
         // Send order to kitchen
         async function sendOrderToKitchen(orderData) {
-            // Store order in localStorage (shared between pages)
+            // Get existing orders
             let orders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
             orderData.status = 'pending';
             orderData.receivedAt = new Date().toISOString();
@@ -289,7 +286,10 @@
                 statusDiv.className = 'order-status show';
                 
                 // Reset form
-                e.target.reset();
+                document.getElementById('customerName').value = '';
+                document.getElementById('phone').value = '';
+                document.getElementById('address').value = '';
+                document.getElementById('notes').value = '';
                 document.getElementById('quantity').value = '1';
                 document.getElementById('totalPrice').textContent = '$12.99';
                 
