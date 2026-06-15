@@ -75,14 +75,36 @@
             margin-top: 4px;
         }
 
-        .refresh-info {
+        .refresh-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn {
+            flex: 1;
             background: #3498db;
             color: white;
-            padding: 12px;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.98);
+        }
+
+        .auto-status {
+            background: #e8f5e9;
+            padding: 10px;
             border-radius: 12px;
             margin-bottom: 20px;
             text-align: center;
-            font-size: 0.85em;
+            font-size: 0.8em;
+            color: #2c3e50;
         }
 
         .orders-container {
@@ -120,7 +142,7 @@
 
         .order-id {
             font-weight: bold;
-            font-size: 1.1em;
+            font-size: 1em;
             color: #2c3e50;
         }
 
@@ -141,7 +163,7 @@
 
         .detail-label {
             font-weight: 600;
-            width: 80px;
+            width: 70px;
             color: #555;
         }
 
@@ -204,7 +226,6 @@
             font-size: 0.85em;
             z-index: 1000;
             display: none;
-            white-space: nowrap;
         }
 
         .toast.show {
@@ -226,8 +247,12 @@
         <div id="printerStatus" class="printer-status" onclick="connectPrinter()">🔌 Tap to Connect</div>
     </div>
 
-    <div class="refresh-info" id="refreshInfo">
-        🔄 Monitoring for new orders...
+    <div class="auto-status" id="autoStatus">
+        🔄 Auto-refresh: Checking every 2 seconds
+    </div>
+
+    <div class="refresh-buttons">
+        <button class="refresh-btn" onclick="manualRefresh()">🔄 Refresh Now</button>
     </div>
 
     <div class="stats">
@@ -252,6 +277,7 @@
         let printer = null;
         let printerServer = null;
         let orders = [];
+        let lastOrderCount = 0;
         
         function showToast(msg, isError = false) {
             const toast = document.getElementById('toast');
@@ -358,7 +384,7 @@
         }
         
         // Load and display orders
-        function refreshDisplay() {
+        function loadAndDisplayOrders() {
             const stored = localStorage.getItem('kitchen_orders');
             if (stored) {
                 try {
@@ -382,7 +408,7 @@
             // Render orders
             const container = document.getElementById('ordersList');
             if (orders.length === 0) {
-                container.innerHTML = '<div class="no-orders">📭 No orders yet. Place an order from customer page!</div>';
+                container.innerHTML = '<div class="no-orders">📭 No orders yet.<br><br>Open customer.html in another tab to place an order.</div>';
                 return;
             }
             
@@ -415,7 +441,8 @@
                 </div>
             `).join('');
             
-            document.getElementById('refreshInfo').innerHTML = `🔄 Last checked: ${new Date().toLocaleTimeString()} | ${orders.length} order(s)`;
+            // Update auto status with time
+            document.getElementById('autoStatus').innerHTML = `🔄 Last checked: ${new Date().toLocaleTimeString()} | ${orders.length} order(s)`;
         }
         
         function escapeHtml(text) {
@@ -434,7 +461,7 @@
             if (order) {
                 order.status = newStatus;
                 saveOrders();
-                refreshDisplay();
+                loadAndDisplayOrders();
                 showToast(`Order ${orderId.slice(-8)}: ${newStatus}`);
             }
         }
@@ -443,7 +470,7 @@
             if (confirm('Complete this order?')) {
                 orders = orders.filter(o => o.orderId !== orderId);
                 saveOrders();
-                refreshDisplay();
+                loadAndDisplayOrders();
                 showToast('Order completed');
             }
         }
@@ -455,27 +482,30 @@
             }
         }
         
-        // Check for NEW orders and auto-print
-        let lastOrderCount = 0;
+        // Manual refresh button
+        function manualRefresh() {
+            loadAndDisplayOrders();
+            showToast('Orders refreshed!');
+            checkForNewAndPrint();
+        }
         
-        function checkAndAutoPrint() {
+        // Check for new orders and auto-print
+        function checkForNewAndPrint() {
             const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
             
-            // If there are more orders than before
             if (currentOrders.length > lastOrderCount && currentOrders.length > 0) {
                 const newestOrder = currentOrders[0];
-                // Check if it's a pending order (new)
                 if (newestOrder && newestOrder.status === 'pending') {
-                    console.log('New order found!', newestOrder.orderId);
+                    console.log('New order detected!', newestOrder.orderId);
                     showToast(`🆕 New order! Printing...`);
                     printOrder(newestOrder).then(() => {
-                        refreshDisplay();
+                        loadAndDisplayOrders();
                     });
                 }
             }
             
             lastOrderCount = currentOrders.length;
-            refreshDisplay();
+            loadAndDisplayOrders();
         }
         
         // Make global functions
@@ -483,22 +513,24 @@
         window.updateStatus = updateStatus;
         window.deleteOrder = deleteOrder;
         window.printOrderById = printOrderById;
+        window.manualRefresh = manualRefresh;
         
         // Start auto-refresh every 2 seconds
-        setInterval(checkAndAutoPrint, 2000);
+        setInterval(() => {
+            checkForNewAndPrint();
+        }, 2000);
         
-        // Also listen for storage events
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'kitchen_orders') {
-                console.log('Storage event detected');
-                checkAndAutoPrint();
+        // Also check when page becomes visible (tab switching)
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                checkForNewAndPrint();
             }
         });
         
         // Initial load
-        refreshDisplay();
         const initialOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
         lastOrderCount = initialOrders.length;
+        loadAndDisplayOrders();
         
         // Auto reconnect to printer
         setTimeout(async () => {
