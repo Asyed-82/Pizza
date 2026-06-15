@@ -96,6 +96,18 @@
             width: 100%;
         }
 
+        .auto-refresh-status {
+            background: #27ae60;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            text-align: center;
+            margin-bottom: 15px;
+            display: inline-block;
+            width: auto;
+        }
+
         .orders-container {
             display: flex;
             flex-direction: column;
@@ -228,14 +240,21 @@
             animation: fadeInOut 2s ease;
         }
 
-        .auto-print-badge {
-            background: #27ae60;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.7em;
-            display: inline-block;
-            margin-left: 10px;
+        .info-bar {
+            background: #e8f5e9;
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .last-update {
+            font-size: 0.8em;
+            color: #2c3e50;
         }
 
         @keyframes fadeInOut {
@@ -264,8 +283,13 @@
 </head>
 <body>
     <div class="header">
-        <h1>🍕 Kitchen Dashboard <span class="auto-print-badge" id="autoPrintStatus">🔄 Auto-Print Active</span></h1>
+        <h1>🍕 Kitchen Dashboard</h1>
         <div id="printerStatus" class="printer-status">🔌 Printer: Not Connected</div>
+    </div>
+
+    <div class="info-bar">
+        <div class="auto-refresh-status">🔄 Auto-Refresh: Every 2 seconds</div>
+        <div class="last-update" id="lastUpdate">Last update: --:--:--</div>
     </div>
 
     <div class="stats">
@@ -283,7 +307,7 @@
         </div>
     </div>
 
-    <button class="refresh-btn" onclick="refreshOrders()">🔄 Refresh Orders</button>
+    <button class="refresh-btn" onclick="manualRefresh()">🔄 Manual Refresh</button>
 
     <div id="ordersList" class="orders-container"></div>
     
@@ -293,6 +317,8 @@
         let printer = null;
         let gattServer = null;
         let orders = [];
+        let refreshInterval = null;
+        let lastOrderIds = [];
         
         function showToast(message, isError = false) {
             const toast = document.getElementById('toast');
@@ -302,6 +328,12 @@
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 3000);
+        }
+        
+        function updateLastUpdateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            document.getElementById('lastUpdate').textContent = `Last update: ${timeStr}`;
         }
         
         // Simple text receipt that works
@@ -382,6 +414,7 @@
                 const data = buildReceipt(order);
                 await sendToPrinter(data);
                 showToast('✅ Ticket printed!');
+                console.log('Printed order:', order.orderId);
                 return true;
             } catch (error) {
                 console.error('Print error:', error);
@@ -468,20 +501,16 @@
             }
             renderOrders();
             updateStats();
+            updateLastUpdateTime();
         }
         
         function saveOrders() {
             localStorage.setItem('kitchen_orders', JSON.stringify(orders));
-            // Trigger storage event for other tabs
-            window.dispatchEvent(new StorageEvent('storage', {
-                key: 'kitchen_orders',
-                newValue: JSON.stringify(orders)
-            }));
         }
         
-        function refreshOrders() {
+        function manualRefresh() {
             loadOrders();
-            showToast('Orders refreshed!');
+            showToast('Orders refreshed manually!');
         }
         
         function updateOrderStatus(orderId, newStatus) {
@@ -592,20 +621,22 @@
             }
         }
         
-        // AUTO-PRINT: Check for new orders every second
-        let lastOrderIds = [];
-        
-        async function checkForNewOrders() {
+        // AUTO-REFRESH AND AUTO-PRINT FUNCTION
+        async function autoRefreshAndPrint() {
+            console.log('Auto-refresh running...');
+            
+            // Get current orders from localStorage
             const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
             const currentOrderIds = currentOrders.map(o => o.orderId);
             
-            // Find new orders
+            // Check for new orders (orders we haven't seen before)
             const newOrders = currentOrders.filter(order => {
                 return !lastOrderIds.includes(order.orderId) && order.status === 'pending';
             });
             
+            // If there are new orders, print them!
             if (newOrders.length > 0) {
-                console.log(`Found ${newOrders.length} new order(s)!`);
+                console.log(`Found ${newOrders.length} new order(s)! Auto-printing...`);
                 
                 for (const newOrder of newOrders) {
                     console.log('Auto-printing order:', newOrder.orderId);
@@ -617,25 +648,36 @@
                         showToast(`⚠️ Auto-print failed for ${newOrder.orderId.slice(-8)}`, true);
                     }
                 }
-                
-                // Reload orders to update display
+            }
+            
+            // Update the orders list (refresh display)
+            if (JSON.stringify(currentOrderIds) !== JSON.stringify(lastOrderIds)) {
+                console.log('Order list changed, refreshing display...');
                 loadOrders();
             }
             
-            // Update last order IDs
+            // Update last order IDs for next comparison
             lastOrderIds = currentOrderIds;
         }
         
-        // Also listen for storage events (when customer page adds order)
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'kitchen_orders') {
-                console.log('Storage event detected - new order may have arrived!');
-                // Small delay to ensure localStorage is updated
-                setTimeout(() => {
-                    checkForNewOrders();
-                }, 100);
+        // Start the auto-refresh timer (every 2 seconds)
+        function startAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
             }
-        });
+            
+            // Initial load
+            loadOrders();
+            
+            // Update lastOrderIds with current orders
+            const initialOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+            lastOrderIds = initialOrders.map(o => o.orderId);
+            
+            // Start interval (2000ms = 2 seconds)
+            refreshInterval = setInterval(autoRefreshAndPrint, 2000);
+            console.log('Auto-refresh started - checking every 2 seconds');
+            showToast('Auto-refresh active - checking for new orders every 2 seconds');
+        }
         
         // Make functions global
         window.connectPrinter = connectPrinter;
@@ -643,24 +685,26 @@
         window.updateOrderStatus = updateOrderStatus;
         window.deleteOrder = deleteOrder;
         window.printSingleOrder = printSingleOrder;
-        window.refreshOrders = refreshOrders;
+        window.manualRefresh = manualRefresh;
         
         // Initialize
-        loadOrders();
+        startAutoRefresh();
         
-        // Start auto-print checker (every 1 second)
-        setInterval(checkForNewOrders, 1000);
-        console.log('Auto-print checker started - checking every 1 second');
+        // Also listen for storage events (instant notification)
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'kitchen_orders') {
+                console.log('Storage event detected - immediate check');
+                autoRefreshAndPrint();
+            }
+        });
         
         // Check Bluetooth support
         if (!('bluetooth' in navigator)) {
             document.getElementById('printerStatus').innerHTML = '❌ Bluetooth NOT supported. Use Chrome browser!';
             document.getElementById('printerStatus').style.background = '#e74c3c';
-            document.getElementById('autoPrintStatus').innerHTML = '⚠️ Bluetooth Required';
-            document.getElementById('autoPrintStatus').style.background = '#e74c3c';
         }
         
-        // Auto-reconnect
+        // Auto-reconnect to printer
         async function autoReconnect() {
             const savedPrinterName = localStorage.getItem('printerName');
             if (savedPrinterName && !printer) {
