@@ -39,11 +39,6 @@
             margin-bottom: 8px;
         }
 
-        .header p {
-            opacity: 0.9;
-            font-size: 0.9em;
-        }
-
         .content {
             padding: 24px;
         }
@@ -72,7 +67,6 @@
             border-radius: 12px;
             font-size: 16px;
             font-family: inherit;
-            transition: border-color 0.3s;
         }
 
         input:focus, select:focus, textarea:focus {
@@ -93,12 +87,6 @@
             font-size: 2em;
         }
 
-        .price-box p {
-            color: #666;
-            font-size: 0.85em;
-            margin-top: 4px;
-        }
-
         button {
             background: #ff6b35;
             color: white;
@@ -108,7 +96,6 @@
             font-size: 1.1em;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
         }
 
         button:active {
@@ -117,7 +104,6 @@
 
         button:disabled {
             background: #ccc;
-            cursor: not-allowed;
         }
 
         .message {
@@ -137,20 +123,6 @@
         .message.error {
             background: #f8d7da;
             color: #721c24;
-            display: block;
-        }
-
-        .order-status {
-            margin-top: 20px;
-            padding: 12px;
-            background: #f8f9fa;
-            border-radius: 12px;
-            font-size: 0.85em;
-            text-align: center;
-            display: none;
-        }
-
-        .order-status.show {
             display: block;
         }
     </style>
@@ -196,14 +168,13 @@
                 
                 <div class="price-box">
                     <h3 id="totalPrice">$12.99</h3>
-                    <p>Classic Cheese Pizza • 12" • Premium Mozzarella</p>
+                    <p>Classic Cheese Pizza • 12"</p>
                 </div>
                 
                 <button type="submit">Place Order 🍕</button>
             </form>
             
             <div id="message"></div>
-            <div id="orderStatus" class="order-status"></div>
         </div>
     </div>
 
@@ -219,21 +190,11 @@
             return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
         }
         
-        function sendOrderToKitchen(orderData) {
-            let orders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-            orderData.status = 'pending';
-            orderData.receivedAt = new Date().toISOString();
-            orders.unshift(orderData);
-            localStorage.setItem('kitchen_orders', JSON.stringify(orders));
-            return true;
-        }
-        
-        document.getElementById('orderForm').addEventListener('submit', async (e) => {
+        document.getElementById('orderForm').addEventListener('submit', (e) => {
             e.preventDefault();
             
             const messageDiv = document.getElementById('message');
-            const statusDiv = document.getElementById('orderStatus');
-            const submitButton = e.target.querySelector('button[type="submit"]');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
             
             const orderData = {
                 orderId: generateOrderId(),
@@ -243,11 +204,12 @@
                 quantity: parseInt(document.getElementById('quantity').value),
                 address: document.getElementById('address').value.trim(),
                 notes: document.getElementById('notes').value.trim(),
-                total: (PIZZA_PRICE * parseInt(document.getElementById('quantity').value)).toFixed(2)
+                total: (PIZZA_PRICE * parseInt(document.getElementById('quantity').value)).toFixed(2),
+                status: 'pending'
             };
             
             if (!orderData.customerName || !orderData.phone || !orderData.address) {
-                messageDiv.innerHTML = '⚠️ Please fill in all required fields.';
+                messageDiv.innerHTML = '⚠️ Please fill all fields';
                 messageDiv.className = 'message error';
                 setTimeout(() => {
                     messageDiv.className = 'message';
@@ -255,39 +217,32 @@
                 return;
             }
             
-            submitButton.disabled = true;
-            submitButton.textContent = 'Processing...';
+            // Save to localStorage
+            let existingOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+            existingOrders.unshift(orderData);
+            localStorage.setItem('kitchen_orders', JSON.stringify(existingOrders));
             
-            try {
-                sendOrderToKitchen(orderData);
-                
-                messageDiv.innerHTML = `✅ Order placed! Order #${orderData.orderId}<br>Kitchen will prepare your pizza.`;
-                messageDiv.className = 'message success';
-                
-                statusDiv.innerHTML = '🕐 Order sent to kitchen. Printing ticket...';
-                statusDiv.className = 'order-status show';
-                
-                document.getElementById('customerName').value = '';
-                document.getElementById('phone').value = '';
-                document.getElementById('address').value = '';
-                document.getElementById('notes').value = '';
-                document.getElementById('quantity').value = '1';
-                document.getElementById('totalPrice').textContent = '$12.99';
-                
-                setTimeout(() => {
-                    messageDiv.className = 'message';
-                }, 5000);
-                
-            } catch (error) {
-                messageDiv.innerHTML = `❌ Error: ${error.message}`;
-                messageDiv.className = 'message error';
-                setTimeout(() => {
-                    messageDiv.className = 'message';
-                }, 3000);
-            } finally {
-                submitButton.disabled = false;
-                submitButton.textContent = 'Place Order 🍕';
-            }
+            // Force a storage event for the kitchen page
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: 'kitchen_orders',
+                newValue: JSON.stringify(existingOrders)
+            }));
+            
+            // Show success
+            messageDiv.innerHTML = `✅ Order placed! Order #${orderData.orderId}<br>Kitchen is preparing your pizza.`;
+            messageDiv.className = 'message success';
+            
+            // Clear form
+            document.getElementById('customerName').value = '';
+            document.getElementById('phone').value = '';
+            document.getElementById('address').value = '';
+            document.getElementById('notes').value = '';
+            document.getElementById('quantity').value = '1';
+            document.getElementById('totalPrice').textContent = '$12.99';
+            
+            setTimeout(() => {
+                messageDiv.className = 'message';
+            }, 5000);
         });
     </script>
 </body>
