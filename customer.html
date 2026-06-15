@@ -171,7 +171,7 @@
                     <p>Classic Cheese Pizza • 12"</p>
                 </div>
                 
-                <button type="submit">Place Order 🍕</button>
+                <button type="submit" id="submitBtn">Place Order 🍕</button>
             </form>
             
             <div id="message"></div>
@@ -194,7 +194,7 @@
             e.preventDefault();
             
             const messageDiv = document.getElementById('message');
-            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const submitBtn = document.getElementById('submitBtn');
             
             const orderData = {
                 orderId: generateOrderId(),
@@ -217,19 +217,25 @@
                 return;
             }
             
-            // Save to localStorage
-            let existingOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+            // Get existing orders
+            let existingOrders = localStorage.getItem('kitchen_orders');
+            if (existingOrders) {
+                existingOrders = JSON.parse(existingOrders);
+            } else {
+                existingOrders = [];
+            }
+            
+            // Add new order at the beginning
             existingOrders.unshift(orderData);
+            
+            // Save to localStorage
             localStorage.setItem('kitchen_orders', JSON.stringify(existingOrders));
             
-            // Force a storage event for the kitchen page
-            window.dispatchEvent(new StorageEvent('storage', {
-                key: 'kitchen_orders',
-                newValue: JSON.stringify(existingOrders)
-            }));
+            console.log('Order saved!', orderData.orderId);
+            console.log('Total orders:', existingOrders.length);
             
             // Show success
-            messageDiv.innerHTML = `✅ Order placed! Order #${orderData.orderId}<br>Kitchen is preparing your pizza.`;
+            messageDiv.innerHTML = `✅ Order placed! Order #${orderData.orderId}<br>Kitchen will prepare your pizza.`;
             messageDiv.className = 'message success';
             
             // Clear form
@@ -244,6 +250,9 @@
                 messageDiv.className = 'message';
             }, 5000);
         });
+        
+        // Debug: Show current orders
+        console.log('Current orders in localStorage:', localStorage.getItem('kitchen_orders'));
     </script>
 </body>
 </html>
