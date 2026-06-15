@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Cheese Pizza - Order Online</title>
+    <title>Kitchen Dashboard - Pizza Orders</title>
     <style>
         * {
             margin: 0;
@@ -13,282 +13,601 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            background: #f5f5f5;
             padding: 16px;
-        }
-
-        .container {
-            max-width: 500px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 24px;
-            overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
 
         .header {
-            background: #ff6b35;
+            background: #2c3e50;
             color: white;
-            padding: 24px;
-            text-align: center;
+            padding: 20px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .header h1 {
-            font-size: 2em;
-            margin-bottom: 8px;
+            font-size: 1.5em;
         }
 
-        .header p {
-            opacity: 0.9;
-            font-size: 0.9em;
-        }
-
-        .content {
-            padding: 24px;
-        }
-
-        .order-form {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        label {
-            font-weight: 600;
-            color: #333;
-            font-size: 0.9em;
-        }
-
-        input, select, textarea {
-            padding: 14px;
-            border: 2px solid #e0e0e0;
-            border-radius: 12px;
-            font-size: 16px;
-            font-family: inherit;
-            transition: border-color 0.3s;
-        }
-
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: #ff6b35;
-        }
-
-        .price-box {
-            background: #fff5f0;
-            padding: 16px;
-            border-radius: 16px;
-            text-align: center;
-            border: 2px solid #ff6b35;
-        }
-
-        .price-box h3 {
-            color: #ff6b35;
-            font-size: 2em;
-        }
-
-        .price-box p {
-            color: #666;
+        .printer-status {
+            background: #e74c3c;
+            padding: 8px 16px;
+            border-radius: 20px;
             font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .printer-status.connected {
+            background: #27ae60;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #ff6b35;
+        }
+
+        .stat-label {
+            font-size: 0.8em;
+            color: #666;
             margin-top: 4px;
         }
 
-        button {
-            background: #ff6b35;
-            color: white;
-            border: none;
-            padding: 16px;
+        .refresh-info {
+            background: #e8f5e9;
+            padding: 10px;
             border-radius: 12px;
-            font-size: 1.1em;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 0.85em;
+            color: #2c3e50;
         }
 
-        button:active {
-            transform: scale(0.98);
+        .orders-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
 
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
+        .order-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border-left: 5px solid #ff6b35;
+            transition: all 0.3s;
         }
 
-        .message {
-            margin-top: 20px;
-            padding: 12px;
-            border-radius: 12px;
-            display: none;
+        .order-card.preparing {
+            border-left-color: #f39c12;
+            background: #fffef5;
+        }
+
+        .order-card.ready {
+            border-left-color: #27ae60;
+            background: #f0fff4;
+        }
+
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .order-id {
+            font-weight: bold;
+            font-size: 1.2em;
+            color: #2c3e50;
+        }
+
+        .order-time {
+            font-size: 0.8em;
+            color: #999;
+        }
+
+        .order-details {
+            margin-bottom: 16px;
+        }
+
+        .detail-row {
+            display: flex;
+            margin-bottom: 8px;
             font-size: 0.9em;
         }
 
-        .message.success {
-            background: #d4edda;
-            color: #155724;
-            display: block;
+        .detail-label {
+            font-weight: 600;
+            width: 100px;
+            color: #555;
         }
 
-        .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            display: block;
+        .detail-value {
+            flex: 1;
+            color: #333;
         }
 
-        .order-status {
-            margin-top: 20px;
-            padding: 12px;
-            background: #f8f9fa;
-            border-radius: 12px;
-            font-size: 0.85em;
+        .order-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-prepare {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-ready {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-complete {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-print {
+            background: #34495e;
+            color: white;
+        }
+
+        .no-orders {
             text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 0.9em;
+            z-index: 1000;
             display: none;
         }
 
-        .order-status.show {
+        .toast.show {
             display: block;
+            animation: fadeInOut 2s ease;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; bottom: 0; }
+            10% { opacity: 1; bottom: 20px; }
+            90% { opacity: 1; bottom: 20px; }
+            100% { opacity: 0; bottom: 0; }
+        }
+
+        @media (max-width: 768px) {
+            .detail-row {
+                flex-direction: column;
+            }
+            .detail-label {
+                width: auto;
+                margin-bottom: 4px;
+            }
+            .order-actions {
+                flex-wrap: wrap;
+            }
+            .btn {
+                flex: 1;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🍕 Cheese Pizza</h1>
-            <p>Fresh & Delicious • Made to Order</p>
+    <div class="header">
+        <h1>🍕 Kitchen Dashboard</h1>
+        <div id="printerStatus" class="printer-status" onclick="connectPrinter()">🔌 Tap to Connect Printer</div>
+    </div>
+
+    <div class="refresh-info">
+        🔄 Auto-refresh every 2 seconds | Orders print automatically
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-number" id="pendingCount">0</div>
+            <div class="stat-label">Pending Orders</div>
         </div>
-        <div class="content">
-            <form id="orderForm" class="order-form">
-                <div class="form-group">
-                    <label>👤 Your Name</label>
-                    <input type="text" id="customerName" required placeholder="Enter your name">
-                </div>
-                
-                <div class="form-group">
-                    <label>📞 Phone Number</label>
-                    <input type="tel" id="phone" required placeholder="Enter phone number">
-                </div>
-                
-                <div class="form-group">
-                    <label>🍕 Quantity</label>
-                    <select id="quantity">
-                        <option value="1">1 Pizza - $12.99</option>
-                        <option value="2">2 Pizzas - $25.98</option>
-                        <option value="3">3 Pizzas - $38.97</option>
-                        <option value="4">4 Pizzas - $51.96</option>
-                        <option value="5">5 Pizzas - $64.95</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>📍 Delivery Address</label>
-                    <textarea id="address" rows="3" required placeholder="Enter your full address"></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label>📝 Special Instructions</label>
-                    <textarea id="notes" rows="2" placeholder="Extra cheese? No onions? Let us know..."></textarea>
-                </div>
-                
-                <div class="price-box">
-                    <h3 id="totalPrice">$12.99</h3>
-                    <p>Classic Cheese Pizza • 12" • Premium Mozzarella</p>
-                </div>
-                
-                <button type="submit">Place Order 🍕</button>
-            </form>
-            
-            <div id="message"></div>
-            <div id="orderStatus" class="order-status"></div>
+        <div class="stat-card">
+            <div class="stat-number" id="preparingCount">0</div>
+            <div class="stat-label">Preparing</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="todayCount">0</div>
+            <div class="stat-label">Today's Orders</div>
         </div>
     </div>
 
+    <div id="ordersList" class="orders-container"></div>
+    <div id="toast" class="toast"></div>
+
     <script>
-        const PIZZA_PRICE = 12.99;
+        let printer = null;
+        let printerServer = null;
+        let orders = [];
+        let lastOrderIds = [];
         
-        document.getElementById('quantity').addEventListener('change', function() {
-            const total = (PIZZA_PRICE * parseInt(this.value)).toFixed(2);
-            document.getElementById('totalPrice').textContent = `$${total}`;
-        });
-        
-        function generateOrderId() {
-            return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.style.background = isError ? '#e74c3c' : '#27ae60';
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
         }
         
-        function sendOrderToKitchen(orderData) {
-            let orders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
-            orderData.status = 'pending';
-            orderData.receivedAt = new Date().toISOString();
-            orders.unshift(orderData);
-            localStorage.setItem('kitchen_orders', JSON.stringify(orders));
-            return true;
+        // Create receipt text
+        function createReceipt(order) {
+            const shortId = order.orderId.slice(-8);
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            const dateStr = now.toLocaleDateString();
+            
+            let text = "";
+            text += "\n\n";
+            text += "=== PIZZA ORDER ===\n";
+            text += "==================\n";
+            text += `Order: ${shortId}\n`;
+            text += `Time: ${dateStr} ${timeStr}\n`;
+            text += `Item: Cheese Pizza\n`;
+            text += `Qty: ${order.quantity}\n`;
+            text += `Total: $${order.total}\n`;
+            text += "------------------\n";
+            text += `${order.customerName}\n`;
+            text += `${order.phone}\n`;
+            text += `${order.address}\n`;
+            if (order.notes && order.notes.trim()) {
+                text += `Note: ${order.notes}\n`;
+            }
+            text += "==================\n";
+            text += "THANK YOU!\n";
+            text += "\n\n\n";
+            
+            return new TextEncoder().encode(text);
         }
         
-        document.getElementById('orderForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        // Send to printer
+        async function sendToPrinter(data) {
+            if (!printer) {
+                throw new Error('No printer');
+            }
             
-            const messageDiv = document.getElementById('message');
-            const statusDiv = document.getElementById('orderStatus');
-            const submitButton = e.target.querySelector('button[type="submit"]');
+            try {
+                if (!printerServer || !printerServer.connected) {
+                    printerServer = await printer.gatt.connect();
+                }
+                
+                const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+                const char = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+                
+                const MAX = 480;
+                for (let i = 0; i < data.length; i += MAX) {
+                    const chunk = data.slice(i, i + MAX);
+                    await char.writeValue(chunk);
+                    await new Promise(r => setTimeout(r, 30));
+                }
+                return true;
+            } catch (err) {
+                printerServer = null;
+                throw err;
+            }
+        }
+        
+        // Print order
+        async function printOrder(order) {
+            if (!printer) {
+                showToast('❌ Printer not connected. Tap the red button to connect.', true);
+                return false;
+            }
             
-            const orderData = {
-                orderId: generateOrderId(),
-                timestamp: new Date().toISOString(),
-                customerName: document.getElementById('customerName').value.trim(),
-                phone: document.getElementById('phone').value.trim(),
-                quantity: parseInt(document.getElementById('quantity').value),
-                address: document.getElementById('address').value.trim(),
-                notes: document.getElementById('notes').value.trim(),
-                total: (PIZZA_PRICE * parseInt(document.getElementById('quantity').value)).toFixed(2)
-            };
+            try {
+                showToast('🖨️ Printing...');
+                const receipt = createReceipt(order);
+                await sendToPrinter(receipt);
+                showToast('✅ Printed!');
+                return true;
+            } catch (err) {
+                showToast('❌ Print failed: ' + err.message, true);
+                return false;
+            }
+        }
+        
+        // Connect to printer
+        async function connectPrinter() {
+            const statusDiv = document.getElementById('printerStatus');
             
-            if (!orderData.customerName || !orderData.phone || !orderData.address) {
-                messageDiv.innerHTML = '⚠️ Please fill in all required fields.';
-                messageDiv.className = 'message error';
-                setTimeout(() => {
-                    messageDiv.className = 'message';
-                }, 3000);
+            if (!('bluetooth' in navigator)) {
+                statusDiv.innerHTML = '❌ Bluetooth not supported. Use Chrome!';
+                statusDiv.style.background = '#e74c3c';
+                showToast('Please use Chrome browser', true);
                 return;
             }
             
-            submitButton.disabled = true;
-            submitButton.textContent = 'Processing...';
+            statusDiv.innerHTML = '🔄 Searching...';
+            statusDiv.style.background = '#f39c12';
             
             try {
-                sendOrderToKitchen(orderData);
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { namePrefix: 'TM' },
+                        { namePrefix: 'EPSON' }
+                    ],
+                    optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+                });
                 
-                messageDiv.innerHTML = `✅ Order placed! Order #${orderData.orderId}<br>Kitchen will prepare your pizza.`;
-                messageDiv.className = 'message success';
+                printer = device;
+                printerServer = await printer.gatt.connect();
                 
-                statusDiv.innerHTML = '🕐 Order sent to kitchen. Printing ticket...';
-                statusDiv.className = 'order-status show';
+                // Test print
+                const testData = new TextEncoder().encode("\n=== Printer Ready ===\n\n");
+                const service = await printerServer.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+                const testChar = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+                await testChar.writeValue(testData);
                 
-                document.getElementById('customerName').value = '';
-                document.getElementById('phone').value = '';
-                document.getElementById('address').value = '';
-                document.getElementById('notes').value = '';
-                document.getElementById('quantity').value = '1';
-                document.getElementById('totalPrice').textContent = '$12.99';
+                statusDiv.innerHTML = '✅ ' + device.name;
+                statusDiv.style.background = '#27ae60';
+                statusDiv.classList.add('connected');
                 
-                setTimeout(() => {
-                    messageDiv.className = 'message';
-                }, 5000);
+                localStorage.setItem('savedPrinter', device.name);
+                showToast('✅ Connected to ' + device.name);
                 
-            } catch (error) {
-                messageDiv.innerHTML = `❌ Error: ${error.message}`;
-                messageDiv.className = 'message error';
-                setTimeout(() => {
-                    messageDiv.className = 'message';
-                }, 3000);
-            } finally {
-                submitButton.disabled = false;
-                submitButton.textContent = 'Place Order 🍕';
+            } catch (err) {
+                console.error(err);
+                statusDiv.innerHTML = '❌ Tap to Retry';
+                statusDiv.style.background = '#e74c3c';
+                showToast('Connection failed: ' + err.message, true);
+                printer = null;
+                printerServer = null;
+            }
+        }
+        
+        // Load orders from localStorage
+        function loadOrders() {
+            const stored = localStorage.getItem('kitchen_orders');
+            if (stored) {
+                try {
+                    orders = JSON.parse(stored);
+                } catch(e) {
+                    orders = [];
+                }
+            } else {
+                orders = [];
+            }
+            renderOrders();
+            updateStats();
+        }
+        
+        function saveOrders() {
+            localStorage.setItem('kitchen_orders', JSON.stringify(orders));
+        }
+        
+        function updateStats() {
+            const pending = orders.filter(o => o.status === 'pending').length;
+            const preparing = orders.filter(o => o.status === 'preparing').length;
+            const today = orders.filter(o => {
+                const today = new Date().toDateString();
+                const orderDate = new Date(o.timestamp).toDateString();
+                return orderDate === today;
+            }).length;
+            
+            document.getElementById('pendingCount').textContent = pending;
+            document.getElementById('preparingCount').textContent = preparing;
+            document.getElementById('todayCount').textContent = today;
+        }
+        
+        function updateOrderStatus(orderId, newStatus) {
+            const order = orders.find(o => o.orderId === orderId);
+            if (order) {
+                order.status = newStatus;
+                saveOrders();
+                loadOrders();
+                showToast(`Order ${orderId.slice(-8)}: ${newStatus}`);
+            }
+        }
+        
+        function deleteOrder(orderId) {
+            if (confirm('Complete this order?')) {
+                orders = orders.filter(o => o.orderId !== orderId);
+                saveOrders();
+                loadOrders();
+                showToast('Order completed');
+            }
+        }
+        
+        function printSingleOrder(orderId) {
+            const order = orders.find(o => o.orderId === orderId);
+            if (order) {
+                printOrder(order);
+            }
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function renderOrders() {
+            const container = document.getElementById('ordersList');
+            
+            if (orders.length === 0) {
+                container.innerHTML = '<div class="no-orders">🎉 No orders yet. Place an order from the customer page!</div>';
+                return;
+            }
+            
+            container.innerHTML = orders.map(order => `
+                <div class="order-card ${order.status}">
+                    <div class="order-header">
+                        <div class="order-id">${escapeHtml(order.orderId)}</div>
+                        <div class="order-time">${new Date(order.timestamp).toLocaleString()}</div>
+                    </div>
+                    <div class="order-details">
+                        <div class="detail-row">
+                            <div class="detail-label">Customer:</div>
+                            <div class="detail-value">${escapeHtml(order.customerName)}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Phone:</div>
+                            <div class="detail-value">${escapeHtml(order.phone)}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Quantity:</div>
+                            <div class="detail-value">${order.quantity} x Cheese Pizza ($${order.total})</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Address:</div>
+                            <div class="detail-value">${escapeHtml(order.address)}</div>
+                        </div>
+                        ${order.notes ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Notes:</div>
+                            <div class="detail-value">📝 ${escapeHtml(order.notes)}</div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="order-actions">
+                        ${order.status === 'pending' ? `
+                            <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Print</button>
+                            <button class="btn btn-prepare" onclick="updateOrderStatus('${order.orderId}', 'preparing')">👨‍🍳 Start</button>
+                        ` : ''}
+                        ${order.status === 'preparing' ? `
+                            <button class="btn btn-print" onclick="printSingleOrder('${order.orderId}')">🖨️ Reprint</button>
+                            <button class="btn btn-ready" onclick="updateOrderStatus('${order.orderId}', 'ready')">✅ Ready</button>
+                        ` : ''}
+                        ${order.status === 'ready' ? `
+                            <button class="btn btn-complete" onclick="deleteOrder('${order.orderId}')">✔️ Complete</button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Auto check for new orders every 2 seconds
+        async function checkNewOrders() {
+            const currentOrders = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+            const currentIds = currentOrders.map(o => o.orderId);
+            
+            // Find new orders
+            const newOrders = currentOrders.filter(order => {
+                return !lastOrderIds.includes(order.orderId) && order.status === 'pending';
+            });
+            
+            if (newOrders.length > 0) {
+                console.log('New orders found:', newOrders.length);
+                for (const order of newOrders) {
+                    showToast(`🆕 New order! Printing...`);
+                    await printOrder(order);
+                }
+                loadOrders(); // Refresh display
+            }
+            
+            lastOrderIds = currentIds;
+        }
+        
+        // Make functions global for buttons
+        window.connectPrinter = connectPrinter;
+        window.updateOrderStatus = updateOrderStatus;
+        window.deleteOrder = deleteOrder;
+        window.printSingleOrder = printSingleOrder;
+        
+        // Auto-reconnect to saved printer
+        async function autoReconnect() {
+            const savedName = localStorage.getItem('savedPrinter');
+            if (savedName && !printer) {
+                try {
+                    const devices = await navigator.bluetooth.getDevices();
+                    const saved = devices.find(d => d.name === savedName);
+                    if (saved) {
+                        printer = saved;
+                        printerServer = await printer.gatt.connect();
+                        const statusDiv = document.getElementById('printerStatus');
+                        statusDiv.innerHTML = '✅ ' + saved.name;
+                        statusDiv.style.background = '#27ae60';
+                        statusDiv.classList.add('connected');
+                        showToast('Reconnected to printer');
+                    }
+                } catch(e) {
+                    console.log('Auto-reconnect failed');
+                }
+            }
+        }
+        
+        // Initialize
+        loadOrders();
+        
+        // Set initial order IDs
+        const initial = JSON.parse(localStorage.getItem('kitchen_orders') || '[]');
+        lastOrderIds = initial.map(o => o.orderId);
+        
+        // Start auto-check every 2 seconds
+        setInterval(checkNewOrders, 2000);
+        console.log('Auto-check started - checking every 2 seconds');
+        
+        // Listen for storage events
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'kitchen_orders') {
+                console.log('Storage event - checking');
+                checkNewOrders();
             }
         });
+        
+        // Auto reconnect
+        setTimeout(autoReconnect, 1000);
+        
+        // Bluetooth support check
+        if (!('bluetooth' in navigator)) {
+            document.getElementById('printerStatus').innerHTML = '❌ Bluetooth not supported';
+            document.getElementById('printerStatus').style.background = '#e74c3c';
+        }
     </script>
 </body>
 </html>
